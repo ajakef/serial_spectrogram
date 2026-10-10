@@ -12,7 +12,7 @@ void main() {
         .where((l) => !l.startsWith('#') && l.isNotEmpty)
         .map((l) => l.split(',').map(double.parse).toList())
         .toList();
-    final processor = SignalProcessor();
+    final processor = SignalProcessor(warmup: 0); // the sample is shorter than the normal warm-up
     var row = 0;
     for (final line in File('sample_data.txt').readAsLinesSync()) {
       if (!processor.addLine(line)) continue;
@@ -29,7 +29,7 @@ void main() {
   });
 
   test('rejects text and bare numbers; short data lines are padded with zeros', () {
-    final p = SignalProcessor();
+    final p = SignalProcessor(warmup: 0);
     expect(p.addLine('Enter Serial Number'), isFalse);
     expect(p.addLine('128'), isFalse);
     expect(p.addLine('926,10,0,3'), isTrue);
@@ -39,12 +39,50 @@ void main() {
   });
 
   test('wraps around the end of the buffer continuously', () {
-    final p = SignalProcessor();
+    final p = SignalProcessor(warmup: 0);
     for (var n = 0; n < SignalProcessor.nFull + 5; n++) {
       p.addLine('$n,1,1,1,1');
     }
     expect(p.index, 5);
     // integrated signal keeps growing across the wrap point
     expect(p.raw[0][4], greaterThan(p.raw[0][SignalProcessor.nFull - 1]));
+  });
+
+  test('warm-up: first 400 samples are filtered but not stored, and the signal carries on smoothly', () {
+    // a huge startup step, then small wiggles
+    String line(int n) => n == 0 ? '0,500000,500000,500000,500000' : '$n,${(n * 7) % 11 - 5},${n % 5 - 2},1,-1';
+    final warmed = SignalProcessor();
+    final reference = SignalProcessor(warmup: 0); // same data, nothing discarded
+    for (var n = 0; n < 1000; n++) {
+      warmed.addLine(line(n));
+      reference.addLine(line(n));
+      if (n == 398) expect(warmed.ready, isFalse);
+      if (n == 399) expect(warmed.ready, isTrue);
+    }
+    expect(warmed.accepted, 1000);
+    expect(warmed.samples, 600);
+    expect(warmed.index, 600);
+    // nothing from the first 400 samples is stored...
+    expect(warmed.filtered[0].map((v) => v.abs()).reduce((a, b) => a > b ? a : b), lessThan(1));
+    // ...but what follows is identical to the no-warm-up result, 400 samples later
+    for (var k = 0; k < 600; k++) {
+      for (var j = 0; j < SignalProcessor.nChan; j++) {
+        expect(warmed.filtered[j][k], closeTo(reference.filtered[j][400 + k], 1e-9));
+      }
+    }
+    expect(reference.filtered[0][0].abs(), greaterThan(100)); // the transient is real
+  });
+
+  test('reset starts over', () {
+    final p = SignalProcessor();
+    for (var n = 0; n < 500; n++) {
+      p.addLine('$n,1,1,1,1');
+    }
+    expect(p.ready, isTrue);
+    p.reset();
+    expect(p.ready, isFalse);
+    expect(p.accepted, 0);
+    expect(p.samples, 0);
+    expect(p.index, 0);
   });
 }

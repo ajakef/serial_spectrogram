@@ -28,7 +28,7 @@ void main() {
   }
 
   testWidgets('plots of the sample capture', (tester) async {
-    final processor = SignalProcessor();
+    final processor = SignalProcessor(warmup: 0); // the sample is shorter than the normal warm-up
     for (final line in File('sample_data.txt').readAsLinesSync()) {
       processor.addLine(line);
     }

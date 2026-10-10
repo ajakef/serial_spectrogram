@@ -51,7 +51,7 @@ class _SpectrogramViewState extends State<SpectrogramView> {
   }
 
   void _update() {
-    final block = widget.processor.accepted ~/ Spectrogram.nPerSeg;
+    final block = widget.processor.samples ~/ Spectrogram.nPerSeg;
     if (_busy || block == _lastBlock) return;
     _lastBlock = block;
     _busy = true;
