@@ -23,6 +23,7 @@ infrasound_plot_gain = -0.125
 N_full = 4096
 #N_full = 1024
 N_sub = 128
+n_warmup = 400 # samples to discard at startup; they contain large transients that would distort the plot scales
 n_chan = 4
 overlap = 0.875
 dt = 0.005
@@ -54,6 +55,17 @@ def data_gen_serial(): # this function must be iterable; every time it yields, w
             ser.write(b'NCM\r\n') # command for "no compression"
             ser.write(b'GN:128,32,32,32\r\n') # standard gains
         #print(line)
+
+    # Run the filter through the first n_warmup samples without plotting them. Then clear the buffers,
+    # keeping only the last sample's state in column -1, which is the "previous sample" for i = 0.
+    for i in range(n_warmup):
+        filtered_data, raw_data = parse_line(ser, filtered_data, raw_data, n_chan, i)
+    last_filtered = filtered_data[:, n_warmup - 1].copy()
+    last_raw = raw_data[:, n_warmup - 1].copy()
+    filtered_data[:] = 0
+    raw_data[:] = 0
+    filtered_data[:, -1] = last_filtered
+    raw_data[:, -1] = last_raw
 
     while True:
         for i in range(N_full):
