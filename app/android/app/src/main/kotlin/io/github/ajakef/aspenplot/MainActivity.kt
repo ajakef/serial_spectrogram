@@ -1,4 +1,4 @@
-package com.example.serial_spectrogram
+package io.github.ajakef.aspenplot
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -24,7 +24,7 @@ import io.flutter.plugin.common.MethodChannel
 // logger and status messages are sent back to Dart on the event channel.
 class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
     private val baudRate = 500000
-    private val permissionAction = "com.example.serial_spectrogram.USB_PERMISSION"
+    private val permissionAction = "io.github.ajakef.aspenplot.USB_PERMISSION"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var events: EventChannel.EventSink? = null
