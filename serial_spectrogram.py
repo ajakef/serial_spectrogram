@@ -8,13 +8,13 @@ import numpy as np
 from scipy.signal import spectrogram
 from utils import get_serial, parse_line, baud_rate, set_up_line_plot, image
 
-sensitivity_infrasound = 0.01/125 * 3.2/12
-sensitivity_seismic = 30 # V/m/s; probably order-of-magnitude accurate.
-bitweight_V = 5/2**24 # differential measurement can go up to +/- 2.5V
-gain_infrasound = 128
-gain_seismic = 32
-bitweight_infrasound = bitweight_V/gain_infrasound/sensitivity_infrasound
-bitweight_seismic = bitweight_V/gain_seismic/sensitivity_seismic * 1e3 # um/s
+#sensitivity_infrasound = 0.01/125 * 3.2/12
+#sensitivity_seismic = 30 # V/m/s; probably order-of-magnitude accurate.
+#bitweight_V = 5/2**24 # differential measurement can go up to +/- 2.5V
+#gain_infrasound = 128
+#gain_seismic = 32
+#bitweight_infrasound = bitweight_V/gain_infrasound/sensitivity_infrasound
+#bitweight_seismic = bitweight_V/gain_seismic/sensitivity_seismic * 1e3 # um/s
 
 seismic_plot_gain = 1
 infrasound_plot_gain = -0.125
@@ -76,7 +76,7 @@ def run(data): # this function accepts the "yields" of the data_gen function as 
         axes[0,0].set_yticks(np.log10(freqticks), freqticks)
     if show_seismic:
         plt.subplot(nplots, 1, 1+show_infrasound)
-        freqs, times, sg = spectrogram(data[1]+eps, fs = 200, window = 'hamming', nperseg = N_sub, noverlap = 0.5*N_sub, detrend = 'linear')#, axis = axes[0]) axis input doesn't work for some reason
+        freqs, times, sg = spectrogram(data[1]+eps, fs = 200, window = 'hamming', nperseg = N_sub, noverlap = overlap*N_sub, detrend = 'linear')#, axis = axes[0]) axis input doesn't work for some reason
         sg[sg == 0] = np.nan
         artists.append(image(np.log(sg.T[:,1:]), times, freqs[1:], log_y = True, ax = axes[show_infrasound+0,0]))
         artists.append(axes[show_infrasound+0,0].plot([current_time, current_time], axes[0,0].get_ylim(), 'k-')[0]) # axes[0,0].plot returns a list of artists, not just one
