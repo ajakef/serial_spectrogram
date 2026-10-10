@@ -1,8 +1,11 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:serial_spectrogram/main.dart';
+import 'package:serial_spectrogram/spectrogram_plot.dart';
+import 'package:serial_spectrogram/trace_plot.dart';
 
 // Runs the whole app with a pretend logger (no USB), to check the screen layout
 // before and after data starts flowing.
@@ -37,5 +40,13 @@ void main() {
     expect(find.textContaining('Waiting'), findsNothing);
     expect(tester.getSize(find.byType(PlotPanels)), full); // didn't shrink when the card went away
     expect(full.width, screen.width);
+
+    // heights: spectrograms a quarter each, traces half
+    final spectrogramHeights = tester.widgetList(find.byType(SpectrogramView)).map((w) => tester.getSize(find.byWidget(w)).height);
+    final traceHeight = tester.getSize(find.byWidgetPredicate((w) => w is CustomPaint && w.painter is TracePainter)).height;
+    for (final h in spectrogramHeights) {
+      expect(h / full.height, closeTo(0.25, 0.001));
+    }
+    expect(traceHeight / full.height, closeTo(0.5, 0.001));
   });
 }

@@ -151,6 +151,7 @@ class PlotPanels extends StatelessWidget {
           ),
         ),
         Expanded(
+          flex: 2, // traces get half the height; each spectrogram a quarter
           child: RepaintBoundary(
             child: CustomPaint(painter: TracePainter(processor, repaint: redraw)),
           ),
