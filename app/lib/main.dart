@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'firmware_screen.dart';
 import 'serial_link.dart';
 import 'signal_processor.dart';
 import 'spectrogram_plot.dart';
@@ -43,7 +44,7 @@ class _PlotScreenState extends State<PlotScreen> {
   void initState() {
     super.initState();
     link.status.listen((s) {
-      if (s == 'disconnected') _startOver();
+      if (s == 'disconnected') heardFromAspen = false; // the plots stay as they were, so the data is kept
       setState(() => status = s);
     });
     link.lines.listen((line) {
@@ -60,6 +61,11 @@ class _PlotScreenState extends State<PlotScreen> {
     heardFromAspen = false;
   }
 
+  Future<void> _openFirmwareScreen() async {
+    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => FirmwareScreen(link: link)));
+    _startOver(); // the logger restarted, so its data starts afresh
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
@@ -71,6 +77,24 @@ class _PlotScreenState extends State<PlotScreen> {
   Widget? _statusCard() {
     final String message;
     final bool busy; // show a spinner: connected, just waiting
+    if (status != 'connected' && processor.samples > 0) {
+      // The plots keep showing the last data received: say so in a small strip that leaves them visible.
+      return Align(
+        alignment: Alignment.topCenter,
+        child: Container(
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.only(left: 12),
+          decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(16)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Disconnected', style: TextStyle(color: Colors.white)),
+              TextButton(onPressed: link.connect, child: const Text('Connect')),
+            ],
+          ),
+        ),
+      );
+    }
     if (status != 'connected') {
       message = 'Plug in the Aspen logger';
       busy = false;
@@ -119,6 +143,15 @@ class _PlotScreenState extends State<PlotScreen> {
             ValueListenableBuilder<int>(
               valueListenable: redraw, // re-checked at every redraw, since the processor isn't a Listenable
               builder: (context, _, _) => _statusCard() ?? const SizedBox.shrink(),
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: IconButton(
+                tooltip: 'Update Aspen firmware',
+                icon: const Icon(Icons.system_update, color: Colors.black38),
+                onPressed: _openFirmwareScreen,
+              ),
             ),
           ],
         ),

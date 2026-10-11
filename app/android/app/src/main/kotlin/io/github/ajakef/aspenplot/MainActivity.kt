@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
 import android.view.WindowManager
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
@@ -20,7 +21,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 // Bridge between the Flutter (Dart) code and the USB serial port.
-// Dart calls "connect"/"write"/"disconnect" on the method channel; bytes from the
+// Dart calls "connect"/"write"/"setBaud"/"setRts"/"disconnect" on the method channel; bytes from the
 // logger and status messages are sent back to Dart on the event channel.
 class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
     private val baudRate = 500000
@@ -30,6 +31,9 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
     private var events: EventChannel.EventSink? = null
     private var port: UsbSerialPort? = null
     private var ioManager: SerialInputOutputManager? = null
+    private var pendingPick: MethodChannel.Result? = null
+    private val pickRequest = 1
+    private val maxPickBytes = 2 * 1024 * 1024
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -62,6 +66,31 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
                         result.error("write", e.message, null)
                     }
                 }
+                "filesDir" -> result.success(filesDir.path)
+                "pickFile" -> {
+                    pendingPick?.success(null)
+                    pendingPick = result
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("*/*")
+                    startActivityForResult(intent, pickRequest)
+                }
+                "setBaud" -> {
+                    try {
+                        port?.setParameters(call.arguments as Int, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error("setBaud", e.message, null)
+                    }
+                }
+                "setRts" -> {
+                    try {
+                        port?.rts = call.arguments as Boolean
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error("setRts", e.message, null)
+                    }
+                }
                 "disconnect" -> { disconnect(); result.success(null) }
                 else -> result.notImplemented()
             }
@@ -83,6 +112,34 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) connect()
+    }
+
+    // Result of the file chooser: sends Dart the file's name and contents, or null if cancelled.
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != pickRequest) {
+            super.onActivityResult(requestCode, resultCode, data)
+            return
+        }
+        val result = pendingPick ?: return
+        pendingPick = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) {
+            result.success(null)
+            return
+        }
+        try {
+            val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                if (it.moveToFirst()) it.getString(0) else null
+            } ?: "file"
+            val bytes = contentResolver.openInputStream(uri)!!.use { it.readNBytes(maxPickBytes + 1) }
+            if (bytes.size > maxPickBytes) {
+                result.error("pickFile", "That file is too big to be firmware.", null)
+            } else {
+                result.success(mapOf("name" to name, "bytes" to bytes))
+            }
+        } catch (e: Exception) {
+            result.error("pickFile", e.message, null)
+        }
     }
 
     override fun onDestroy() {

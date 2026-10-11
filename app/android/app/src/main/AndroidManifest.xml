@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- For downloading firmware from GitHub -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="Aspen Plot"
         android:name="${applicationName}"

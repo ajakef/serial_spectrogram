@@ -48,7 +48,7 @@ void main() {
     expect(p.raw[0][4], greaterThan(p.raw[0][SignalProcessor.nFull - 1]));
   });
 
-  test('warm-up: first 400 samples are filtered but not stored, and the signal carries on smoothly', () {
+  test('warm-up: first 10 samples are not stored; the integrated signal carries on and the filter restarts', () {
     // a huge startup step, then small wiggles
     String line(int n) => n == 0 ? '0,500000,500000,500000,500000' : '$n,${(n * 7) % 11 - 5},${n % 5 - 2},1,-1';
     final warmed = SignalProcessor();
@@ -56,21 +56,25 @@ void main() {
     for (var n = 0; n < 1000; n++) {
       warmed.addLine(line(n));
       reference.addLine(line(n));
-      if (n == 398) expect(warmed.ready, isFalse);
-      if (n == 399) expect(warmed.ready, isTrue);
+      if (n == 8) expect(warmed.ready, isFalse);
+      if (n == 9) expect(warmed.ready, isTrue);
     }
     expect(warmed.accepted, 1000);
-    expect(warmed.samples, 600);
-    expect(warmed.index, 600);
-    // nothing from the first 400 samples is stored...
-    expect(warmed.filtered[0].map((v) => v.abs()).reduce((a, b) => a > b ? a : b), lessThan(1));
-    // ...but what follows is identical to the no-warm-up result, 400 samples later
-    for (var k = 0; k < 600; k++) {
+    expect(warmed.samples, 990);
+    expect(warmed.index, 990);
+    // the integrated signal is the same as with no warm-up, 10 samples later (it includes the startup step)
+    for (var k = 0; k < 990; k++) {
       for (var j = 0; j < SignalProcessor.nChan; j++) {
-        expect(warmed.filtered[j][k], closeTo(reference.filtered[j][400 + k], 1e-9));
+        expect(warmed.raw[j][k], closeTo(reference.raw[j][10 + k], 1e-9));
       }
     }
-    expect(reference.filtered[0][0].abs(), greaterThan(100)); // the transient is real
+    // the filter restarts from zero, so the startup step never reaches the stored filtered signal...
+    expect(warmed.filtered[0].take(990).map((v) => v.abs()).reduce((a, b) => a > b ? a : b), lessThan(1));
+    expect(reference.filtered[0][0].abs(), greaterThan(100)); // ...though the transient is real
+    // ...and after the filter's own start-up transient dies away, the two agree
+    for (var k = 890; k < 990; k++) {
+      expect(warmed.filtered[0][k], closeTo(reference.filtered[0][10 + k], 1e-3));
+    }
   });
 
   test('reset starts over', () {

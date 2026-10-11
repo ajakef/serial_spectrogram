@@ -23,7 +23,7 @@ infrasound_plot_gain = -0.125
 N_full = 4096
 #N_full = 1024
 N_sub = 128
-n_warmup = 400 # samples to discard at startup; they contain large transients that would distort the plot scales
+n_warmup = 10 # samples to discard at startup; they contain large transients that would distort the plot scales
 n_chan = 4
 overlap = 0.875
 dt = 0.005
@@ -33,48 +33,68 @@ show_infrasound = True
 show_seismic = True
 show_traces = True
 
+_state = {} # serial port and sample buffers; shared by every generator (see data_gen_serial)
+
 def data_gen_serial(): # this function must be iterable; every time it yields, what it yields is the input to run()
-    infrasound = np.zeros(N_full) 
-    seismic = np.zeros(N_full)
-    filtered_data = np.zeros([n_chan, N_full])
-    raw_data = np.zeros([n_chan, N_full])
-    print('startup')
-    #try:
-    #    ser = serial.Serial('/dev/ttyUSB0', baud_rate, timeout=2)  # Open port and read data.
-    #except:
-    #    try:
-    #        ser = serial.Serial('/dev/ttyUSB1', baud_rate, timeout=2)  # Open port and read data.
-    #    except:
-    #        raise(Exception('Could not open ttyUSB0 or ttyUSB1. Please confirm that pySerial is installed and device is plugged in.'))
-    ser = get_serial()
+    # matplotlib (blit=True) calls this function again every time the window is resized, to redraw the first frame. Opening
+    # the port resets the logger, so the startup steps must run only once; later calls pick up where the last one left off.
+    if not _state:
+        filtered_data = np.zeros([n_chan, N_full])
+        raw_data = np.zeros([n_chan, N_full])
+        print('startup')
+        #try:
+        #    ser = serial.Serial('/dev/ttyUSB0', baud_rate, timeout=2)  # Open port and read data.
+        #except:
+        #    try:
+        #        ser = serial.Serial('/dev/ttyUSB1', baud_rate, timeout=2)  # Open port and read data.
+        #    except:
+        #        raise(Exception('Could not open ttyUSB0 or ttyUSB1. Please confirm that pySerial is installed and device is plugged in.'))
+        ser = get_serial()
 
-    ser.reset_input_buffer()  # Flush input buffer, discarding all its contents.
-    for i in range(100):
-        line = ser.readline()
-        if line == b'Enter Serial Number\r\n':
-            ser.write(b'NCM\r\n') # command for "no compression"
-            ser.write(b'GN:128,32,32,32\r\n') # standard gains
-        #print(line)
+        ser.reset_input_buffer()  # Flush input buffer, discarding all its contents.
+        # The logger restarts when the port opens and prints a prompt, then listens for commands for only a couple of seconds.
+        # Wait for the prompt by time rather than by line count (the number of startup lines before it varies), and match it
+        # as a substring because newer FW can run it together with other output. If the logger was already running, no prompt
+        # will come; stop waiting once data lines are streaming.
+        prompt_timeout = 30 # s
+        n_data_lines = 0
+        t_start = time.time()
+        while time.time() - t_start < prompt_timeout:
+            line = ser.readline()
+            if b'Enter Serial Number' in line:
+                ser.write(b'NCM\r\n') # command for "no compression"
+                ser.write(b'GN:128,32,32,32\r\n\n') # standard gains; the extra blank line tells the logger no more commands are coming, so it skips its wait
+                break
+            n_data_lines = n_data_lines + 1 if line.split(b',')[0].strip().lstrip(b'-').isdigit() else 0
+            if n_data_lines >= 20:
+                break
+        else:
+            print('Did not see the logger\'s "Enter Serial Number" prompt; continuing without sending setup commands')
 
-    # Run the filter through the first n_warmup samples without plotting them. Then clear the buffers,
-    # keeping only the last sample's state in column -1, which is the "previous sample" for i = 0.
-    for i in range(n_warmup):
-        filtered_data, raw_data = parse_line(ser, filtered_data, raw_data, n_chan, i)
-    last_filtered = filtered_data[:, n_warmup - 1].copy()
-    last_raw = raw_data[:, n_warmup - 1].copy()
-    filtered_data[:] = 0
-    raw_data[:] = 0
-    filtered_data[:, -1] = last_filtered
-    raw_data[:, -1] = last_raw
+        # Run the filter through the first n_warmup samples without plotting them. Then clear the buffers,
+        # keeping only the last sample's state in column -1, which is the "previous sample" for i = 0.
+        for i in range(n_warmup):
+            filtered_data, raw_data = parse_line(ser, filtered_data, raw_data, n_chan, i)
+        last_filtered = filtered_data[:, n_warmup - 1].copy()
+        last_raw = raw_data[:, n_warmup - 1].copy()
+        filtered_data[:] = 0
+        raw_data[:] = 0
+        #filtered_data[:, -1] = last_filtered
+        raw_data[:, -1] = last_raw
+
+        _state.update(ser = ser, filtered_data = filtered_data, raw_data = raw_data, i = 0)
+    ser, filtered_data, raw_data = _state['ser'], _state['filtered_data'], _state['raw_data']
 
     while True:
-        for i in range(N_full):
-            filtered_data, raw_data = parse_line(ser, filtered_data, raw_data, n_chan, i) 
-            if (i % N_sub) == 0:
-                yield [filtered_data[j,:] for j in range(n_chan)] + [i]
-        
+        i = _state['i']
+        filtered_data, raw_data = parse_line(ser, filtered_data, raw_data, n_chan, i)
+        _state['i'] = (i + 1) % N_full # advance before yielding: a generator abandoned at a yield must not repeat its sample
+        if (i % N_sub) == 0:
+            yield [filtered_data[j,:] for j in range(n_chan)] + [i]
+
 def run(data): # this function accepts the "yields" of the data_gen function as its input, and must return a list of all artists (i.e., images and lines). If some feature in the plot isn't updating right, it may not be included in the returned list. note that axis.plot() returns a list of (typically 1) artists, not an artist itself. Seems like storing info in globals isn't an option.
-    eps = np.random.normal(0, 1e-9, N_full)
+    #eps = np.random.normal(0, 1e-9, N_full)
+    eps = 1e-9 * (np.arange(N_full)==0)
     artists = []
     nplots = show_seismic+show_infrasound+show_traces
     current_time = data[-1] * dt

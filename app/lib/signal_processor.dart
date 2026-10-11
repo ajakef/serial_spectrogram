@@ -5,14 +5,15 @@ import 'dart:typed_data';
 /// Mirrors utils.parse_line in the Python code (including its filter and scaling constants),
 /// with two deliberate differences: a data line with fewer than four values has its missing
 /// values taken as zero (the logger leaves out trailing zeros) instead of being discarded,
-/// and the first [warmup] samples are filtered but not stored, since the startup transient
-/// (huge values for the first second or two) would distort the plot scales.
+/// and the first [warmup] samples are not stored, since the startup transient would distort the plot
+/// scales. The integrated signal carries on through the warm-up, but the filter restarts from zero
+/// afterward, as in the Python code.
 class SignalProcessor {
   static const nFull = 4096; // samples kept: 20.48 s at 200 Hz
   static const nChan = 4; // infrasound, vertical, north, east
   static const dt = 0.005;
   static const cornerFreq = 1.0; // Hz
-  static const defaultWarmup = 400; // samples (2 s) discarded after startup; same as n_warmup in Python
+  static const defaultWarmup = 10; // samples (0.05 s) discarded after startup; same as n_warmup in Python
 
   // Same values as utils.py. The firmware divides gains by 16 "to avoid writing noise bits".
   static const _bitweightV = 5 / (1 << 24); // differential measurement goes up to +/- 2.5 V
@@ -41,8 +42,8 @@ class SignalProcessor {
   final List<Float64List> filtered = List.generate(nChan, (_) => Float64List(nFull));
   int index = 0;
 
-  // Most recent sample (the filter's memory). Kept separately so it survives the warm-up,
-  // when nothing is stored in the buffers.
+  // Most recent sample (the filter's memory). Kept separately because nothing is stored in the buffers
+  // during the warm-up.
   final Float64List _lastRaw = Float64List(nChan);
   final Float64List _lastFiltered = Float64List(nChan);
 
@@ -98,6 +99,7 @@ class SignalProcessor {
       }
     }
     accepted++;
+    if (!storing && accepted >= warmup) _lastFiltered.fillRange(0, nChan, 0); // warm-up just ended: restart the filter
     if (storing) {
       index = (i + 1) % nFull;
       samples++;

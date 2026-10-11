@@ -6,6 +6,7 @@
 - Tell me which things I'm asking for are easy and which are hard. If a feature request would involve a major expansion of the project's scope, tell me first.
 - Tell me if something I'm asking for is likely to cause problems, because I basically do not know how phone apps work.
 - Tell me how I can test whether a new change succeeded. I have an Android phone (Samsung Galaxy S20 FE).
+- If new code needs to be built and installed, do it yourself if it's cheap. Otherwise, tell me how to do it.
 
 ## Development and maintenance strategy
 - The app should be bare-bones, low-maintenance, and cross-platform by design. I want to do minimal if any maintenance work on it post-completion.

@@ -28,8 +28,15 @@ If the card says "Plug in the Aspen logger" with the cable attached, tap **Conne
 before data starts, as with the Python version. You may need a `CONFIG.TXT` file on its microSD card
 telling it to run all 4 channels.
 
+**Updating the Aspen's firmware:** tap the small download icon at the top right of the plot screen. The screen
+shows the firmware now on the Aspen (it restarts the Aspen and reads the "Firmware:" line it prints at startup).
+Then either tap the firmware you used last time (offered at the top, so reinstalling is one tap), **Download the
+newest from GitHub** (the newest release of `ajakef/aspen-firmware`, which must have the Arduino IDE's `.bin` file
+attached), or **Choose a .bin file from this phone** (such as an email attachment; it shows your Downloads folder).
+The firmware goes through the cable at 115,200 baud. Stay on the screen until it says "Done".
+
 **Differences from the Python version:**
-- The first 400 samples (2 s) are discarded, because the logger's startup values are extreme.
+- The first 10 samples (0.05 s) are discarded, because the logger's startup values are extreme.
   (The Python script does this too now.)
 - Data lines with fewer than four values have the missing ones taken as zero (the logger leaves out
   trailing zeros), instead of being dropped.
@@ -43,9 +50,11 @@ It is a [Flutter](https://flutter.dev) app (Dart code) with a small amount of Ko
 | File | What it does |
 | --- | --- |
 | `lib/main.dart` | The screen: three panels, status card, redraw timer |
-| `lib/signal_processor.dart` | Line parsing, scaling, integration, 1 Hz high-pass filter (as `utils.py`), 400-sample warm-up |
+| `lib/signal_processor.dart` | Line parsing, scaling, integration, 1 Hz high-pass filter (as `utils.py`), 10-sample warm-up |
 | `lib/spectrogram.dart` | Spectrogram math (as `scipy.signal.spectrogram`) |
 | `lib/spectrogram_plot.dart`, `lib/trace_plot.dart`, `lib/plot_axes.dart`, `lib/viridis.dart` | Drawing |
+| `lib/firmware_screen.dart`, `lib/firmware_source.dart` | Firmware update screen; finds and downloads the file from GitHub |
+| `lib/svl_uploader.dart` | Loads the file into the Artemis bootloader (a port of SparkFun's `svl.py`) |
 | `lib/serial_link.dart` | Dart side of the USB connection; answers the logger's `Enter Serial Number` prompt |
 | `android/.../MainActivity.kt` | Android side of the USB connection (500,000 baud, 8N1) |
 | `android/.../res/xml/device_filter.xml` | USB IDs that make Android offer to open the app (FT232 only) |
