@@ -89,4 +89,27 @@ void main() {
     expect(p.samples, 0);
     expect(p.index, 0);
   });
+
+  test('newer firmware (AspenCSV0.4): no time code; the line after a T line is absolute', () {
+    final p = SignalProcessor(warmup: 0);
+    expect(p.addLine('6,-4,-3,-7'), isTrue); // before any T line: older format, so 6 is a time code
+    expect(p.raw[0][0], closeTo(-4 * SignalProcessor.bitweights[0], 1e-12));
+    final before = [for (var j = 0; j < SignalProcessor.nChan; j++) p.raw[j][0]];
+
+    expect(p.addLine('T,12.345678,1792108800.005,1'), isFalse);
+    expect(p.addLine('123456,-654321,7,8'), isTrue); // absolute values: no change
+    for (var j = 0; j < SignalProcessor.nChan; j++) {
+      expect(p.raw[j][1], closeTo(before[j], 1e-12));
+    }
+    expect(p.addLine('6,-4,-3,-7'), isTrue); // all four values are changes now
+    expect(p.raw[0][2], closeTo(before[0] + 6 * SignalProcessor.bitweights[0], 1e-12));
+    expect(p.raw[3][2], closeTo(before[3] - 7 * SignalProcessor.bitweights[3], 1e-12));
+    expect(p.addLine('5'), isTrue); // trailing zero changes left out
+    expect(p.raw[0][3], closeTo(before[0] + 11 * SignalProcessor.bitweights[0], 1e-12));
+    expect(p.raw[1][3], closeTo(p.raw[1][2], 1e-12));
+    expect(p.addLine('H,1116,5.12,12.560'), isFalse);
+
+    p.reset(); // e.g. a different logger plugged in: back to the older format until a T line arrives
+    expect(p.addLine('5'), isFalse);
+  });
 }

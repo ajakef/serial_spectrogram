@@ -42,14 +42,24 @@ def get_serial():
 
 
         
+_new_format = False     # a T line has been seen (AspenCSV0.4 firmware): data lines have no time code
+_absolute_next = False  # the next data line holds absolute values (it follows a T line)
+
 def parse_line(ser, filtered_data, raw_data, n_chan, i):
+    global _new_format, _absolute_next
     bitweights = [bitweight_infrasound] + [bitweight_seismic for i in range(n_chan - 1)]
     while True:
         try:
             line = ser.readline().decode('utf-8', errors = 'ignore').strip().split(',')
+            if line[0] == 'T':
+                _new_format, _absolute_next = True, True
+                continue
+            first = 0 if _new_format else 1  # older firmware puts a time code first
             float(line[0]) # raises an exception if the first character isn't numeric
             # newer FW drops trailing zero diffs, so a line may have fewer than n_chan values; missing ones are zero diffs
-            diffs = [float(line[j+1]) if j + 1 < len(line) else 0.0 for j in range(n_chan)]
+            diffs = [float(line[j+first]) if j + first < len(line) else 0.0 for j in range(n_chan)]
+            if _absolute_next:  # absolute values, not changes: treat as no change
+                diffs, _absolute_next = [0.0] * n_chan, False
             raw_data[:,i] = np.array([diffs[j] * bitweights[j] for j in range(n_chan)]) + raw_data[:,i-1] # integrate it before filtering
             filtered_data[:,i] = -a[1] * filtered_data[:,i-1] + b[0] * raw_data[:,i] + b[1] * raw_data[:,i-1]
             return filtered_data, raw_data

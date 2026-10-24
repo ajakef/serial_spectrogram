@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
+import 'startup_commands.dart';
 import 'svl_uploader.dart';
 
 /// Connection to the Aspen logger over USB serial (Android side is in MainActivity.kt).
@@ -25,6 +26,15 @@ class SerialLink implements SvlPort {
   /// Latest status, as in [status].
   String currentStatus = 'starting';
 
+  late final StartupCommands _startup = StartupCommands(
+    write: write,
+    restart: restartLogger,
+    onProblem: (message) {
+      currentStatus = 'error: $message';
+      _status.add(currentStatus);
+    },
+  );
+
   /// Each complete line from the logger, without the trailing \r\n.
   Stream<String> get lines => _lines.stream;
 
@@ -37,6 +47,7 @@ class SerialLink implements SvlPort {
         _addBytes(event);
       } else if (event is String) {
         if (event == 'disconnected') _buffer.clear();
+        if (event == 'connected') _startup.reset();
         currentStatus = event;
         _status.add(event);
       }
@@ -45,6 +56,15 @@ class SerialLink implements SvlPort {
   }
 
   void connect() => _methods.invokeMethod('connect');
+
+  /// Restarts the logger the way connecting does: RTS released, then asserted (the Aspen restarts when
+  /// RTS is asserted), leaving it asserted as after connecting.
+  Future<void> restartLogger() async {
+    _buffer.clear();
+    await setRts(false);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await setRts(true);
+  }
 
   Future<void> write(String text) =>
       _methods.invokeMethod('write', Uint8List.fromList(utf8.encode(text)));
@@ -113,14 +133,12 @@ class SerialLink implements SvlPort {
   }
 
   void _handleLine(String line) {
-    if (line == 'Enter Serial Number') {
-      write('NCM\r\n'); // command for "no compression"
-      write('GN:128,32,32,32\r\n\n'); // standard gains; the extra blank line tells the logger no more commands are coming, so it skips its wait
-    }
+    _startup.handleLine(line); // answers the startup prompt and checks the gains were set
     _lines.add(line);
   }
 
   void dispose() {
+    _startup.dispose();
     _sub?.cancel();
     _methods.invokeMethod('disconnect');
   }

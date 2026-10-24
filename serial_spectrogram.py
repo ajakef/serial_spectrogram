@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 import time
 import serial
 import matplotlib.pyplot as plt
@@ -33,6 +34,105 @@ show_infrasound = True
 show_seismic = True
 show_traces = True
 
+gains = b'128,32,32,32' # standard gains sent to the logger at startup
+
+def firmware_checks_gains(version_line):
+    # Firmware 0.8.2 and later reply "Gains accepted: ..." or "Gains rejected ..." to a GN: command
+    m = re.search(rb'Firmware: (\d+)\.(\d+)\.(\d+)', version_line)
+    return m is not None and tuple(int(x) for x in m.groups()) >= (0, 8, 2)
+
+def wait_for_gain_reply(ser, timeout = 3):
+    # returns the reply line containing "Gains accepted" or "Gains rejected", or None if none arrives in time
+    t_start = time.time()
+    while time.time() - t_start < timeout:
+        line = ser.readline()
+        if b'Gains accepted' in line or b'Gains rejected' in line:
+            return line.strip()
+    return None
+
+def start_logger(max_restarts = 3, max_sends = 3):
+    # Opens the serial port, which restarts the logger. When the logger prints its prompt, sends the setup commands:
+    # NCM (no compression, data on the serial port), NSD (no SD card required), and the gains. The logger listens for commands for only a couple of
+    # seconds. Newer firmware says whether it accepted the gains: if it rejected them (e.g. a byte was garbled in
+    # transmission), they are sent again; if there was no reply, or the accepted gains aren't the ones sent, the logger
+    # is restarted (by reopening the port) and setup starts over.
+    for restart in range(max_restarts):
+        ser = get_serial()
+        ser.reset_input_buffer()  # Flush input buffer, discarding all its contents.
+        # Wait for the prompt by time rather than by line count (the number of startup lines before it varies), and match it
+        # as a substring because newer FW can run it together with other output. If the logger was already running, no prompt
+        # will come; stop waiting once data lines are streaming.
+        prompt_timeout = 30 # s
+        n_data_lines = 0
+        checks_gains = False
+        t_start = time.time()
+        while time.time() - t_start < prompt_timeout:
+            line = ser.readline()
+            if b'Firmware:' in line:
+                checks_gains = firmware_checks_gains(line)
+            if b'Enter Serial Number' in line:
+                break
+            n_data_lines = n_data_lines + 1 if line.split(b',')[0].strip().lstrip(b'-').isdigit() else 0
+            if n_data_lines >= 20:
+                print('Logger was already running; continuing without sending setup commands')
+                return ser
+        else:
+            print('Did not see the logger\'s "Enter Serial Number" prompt; continuing without sending setup commands')
+            return ser
+
+        ser.write(b'NCM\r\n') # command for "no compression"
+        ser.write(b'NSD\r\n') # "no SD card required": plotting works without a card, and SD errors aren't shown (older firmware ignores it)
+        if not checks_gains: # older firmware: send once, no reply to check
+            ser.write(b'GN:' + gains + b'\r\n\n') # the extra blank line tells the logger no more commands are coming, so it skips its wait
+            return ser
+        for send in range(max_sends):
+            ser.write(b'GN:' + gains + b'\r\n\n')
+            reply = wait_for_gain_reply(ser)
+            print(reply)
+            if reply is None:
+                break # no reply: restart and try again
+            if b'Gains rejected' in reply:
+                continue # the logger is still listening: send again
+            if reply.split(b':')[-1].strip() == gains:
+                return ser
+            break # accepted, but not the gains sent (e.g. a dropped digit): restart and try again
+        print('Gains were not set correctly; restarting the logger and trying again')
+        ser.close()
+    raise Exception(f'Could not set the logger\'s gains to {gains.decode()} after {max_restarts} tries')
+
+class UsbDisconnected(BaseException):
+    # A BaseException rather than an Exception: utils.parse_line catches every Exception (a garbled line) and keeps
+    # reading, which would loop forever on a port that's gone.
+    pass
+
+class SerialPortWatcher:
+    # Wraps the serial port so that losing the logger (USB unplugged, or no data for several seconds) stops the plot
+    # instead of being treated as a bad line. Everything else passes through to the port.
+    max_empty_reads = 3 # each empty read is a readline() timeout (2 s), so this is about 6 s with no data
+    def __init__(self, ser):
+        self.ser = ser
+        self.empty_reads = 0
+    def readline(self):
+        try:
+            line = self.ser.readline()
+        except (serial.SerialException, OSError) as e:
+            raise UsbDisconnected(str(e))
+        self.empty_reads = self.empty_reads + 1 if line == b'' else 0
+        if self.empty_reads >= self.max_empty_reads:
+            raise UsbDisconnected('no data from the logger')
+        return line
+    def __getattr__(self, name):
+        return getattr(self.ser, name)
+
+def show_disconnected(reason):
+    # Stops the animation and says so on the plot; the window and its last data stay up until it's closed.
+    print(f'Logger disconnected ({reason}); the plot has stopped. Close the window to exit.')
+    if 'ani' in globals():
+        ani.event_source.stop()
+    if 'fig' in globals():
+        fig.suptitle('USB disconnected: plot stopped', color = 'red')
+        fig.canvas.draw_idle()
+
 _state = {} # serial port and sample buffers; shared by every generator (see data_gen_serial)
 
 def data_gen_serial(): # this function must be iterable; every time it yields, what it yields is the input to run()
@@ -49,32 +149,17 @@ def data_gen_serial(): # this function must be iterable; every time it yields, w
         #        ser = serial.Serial('/dev/ttyUSB1', baud_rate, timeout=2)  # Open port and read data.
         #    except:
         #        raise(Exception('Could not open ttyUSB0 or ttyUSB1. Please confirm that pySerial is installed and device is plugged in.'))
-        ser = get_serial()
-
-        ser.reset_input_buffer()  # Flush input buffer, discarding all its contents.
-        # The logger restarts when the port opens and prints a prompt, then listens for commands for only a couple of seconds.
-        # Wait for the prompt by time rather than by line count (the number of startup lines before it varies), and match it
-        # as a substring because newer FW can run it together with other output. If the logger was already running, no prompt
-        # will come; stop waiting once data lines are streaming.
-        prompt_timeout = 30 # s
-        n_data_lines = 0
-        t_start = time.time()
-        while time.time() - t_start < prompt_timeout:
-            line = ser.readline()
-            if b'Enter Serial Number' in line:
-                ser.write(b'NCM\r\n') # command for "no compression"
-                ser.write(b'GN:128,32,32,32\r\n\n') # standard gains; the extra blank line tells the logger no more commands are coming, so it skips its wait
-                break
-            n_data_lines = n_data_lines + 1 if line.split(b',')[0].strip().lstrip(b'-').isdigit() else 0
-            if n_data_lines >= 20:
-                break
-        else:
-            print('Did not see the logger\'s "Enter Serial Number" prompt; continuing without sending setup commands')
+        ser = SerialPortWatcher(start_logger())
 
         # Run the filter through the first n_warmup samples without plotting them. Then clear the buffers,
         # keeping only the last sample's state in column -1, which is the "previous sample" for i = 0.
-        for i in range(n_warmup):
-            filtered_data, raw_data = parse_line(ser, filtered_data, raw_data, n_chan, i)
+        try:
+            for i in range(n_warmup):
+                filtered_data, raw_data = parse_line(ser, filtered_data, raw_data, n_chan, i)
+        except UsbDisconnected as e:
+            _state.update(disconnected = True, last_frame = None)
+            show_disconnected(e)
+            return
         last_filtered = filtered_data[:, n_warmup - 1].copy()
         last_raw = raw_data[:, n_warmup - 1].copy()
         filtered_data[:] = 0
@@ -83,14 +168,25 @@ def data_gen_serial(): # this function must be iterable; every time it yields, w
         raw_data[:, -1] = last_raw
 
         _state.update(ser = ser, filtered_data = filtered_data, raw_data = raw_data, i = 0)
+    if _state.get('disconnected'):
+        # matplotlib asks for a frame again when the window is resized: redraw the last one, then stop
+        if _state.get('last_frame') is not None:
+            yield _state['last_frame']
+        return
     ser, filtered_data, raw_data = _state['ser'], _state['filtered_data'], _state['raw_data']
 
     while True:
         i = _state['i']
-        filtered_data, raw_data = parse_line(ser, filtered_data, raw_data, n_chan, i)
+        try:
+            filtered_data, raw_data = parse_line(ser, filtered_data, raw_data, n_chan, i)
+        except UsbDisconnected as e:
+            _state['disconnected'] = True
+            show_disconnected(e)
+            return
         _state['i'] = (i + 1) % N_full # advance before yielding: a generator abandoned at a yield must not repeat its sample
         if (i % N_sub) == 0:
-            yield [filtered_data[j,:] for j in range(n_chan)] + [i]
+            _state['last_frame'] = [filtered_data[j,:].copy() for j in range(n_chan)] + [i]
+            yield _state['last_frame']
 
 def run(data): # this function accepts the "yields" of the data_gen function as its input, and must return a list of all artists (i.e., images and lines). If some feature in the plot isn't updating right, it may not be included in the returned list. note that axis.plot() returns a list of (typically 1) artists, not an artist itself. Seems like storing info in globals isn't an option.
     #eps = np.random.normal(0, 1e-9, N_full)
@@ -153,6 +249,7 @@ if __name__ == '__main__':
     # Frames: Receives the generated data from the serial connection
     # Run: Provides the line data
 
-    ani = animation.FuncAnimation(fig, run, frames=data_gen_serial, blit=True, interval=50, save_count = 0)
+    # repeat = False: when the data stop (USB unplugged), the animation ends and the window stays open
+    ani = animation.FuncAnimation(fig, run, frames=data_gen_serial, blit=True, interval=50, save_count = 0, repeat = False)
     plt.show()
 

@@ -8,6 +8,12 @@ import 'dart:typed_data';
 /// and the first [warmup] samples are not stored, since the startup transient would distort the plot
 /// scales. The integrated signal carries on through the warm-up, but the filter restarts from zero
 /// afterward, as in the Python code.
+///
+/// Two firmware formats are understood. Older firmware starts each data line with a time code
+/// ("1019,6,-4,-3,-7"). Newer firmware (AspenCSV0.4) writes data lines with no time code ("6,-4,-3,-7"),
+/// evenly spaced, and sends a T line ("T,...") before its first data line and now and then afterward; the
+/// data line after a T line holds absolute values rather than changes. The first T line switches to the newer
+/// format. The absolute line after a T line is taken as "no change", which keeps the plot continuous.
 class SignalProcessor {
   static const nFull = 4096; // samples kept: 20.48 s at 200 Hz
   static const nChan = 4; // infrasound, vertical, north, east
@@ -51,6 +57,9 @@ class SignalProcessor {
   int rejected = 0; // non-data lines (startup text and so on)
   int samples = 0; // samples stored in the buffers, after warm-up
 
+  bool _newFormat = false; // a T line has been seen: data lines have no time code
+  bool _absoluteNext = false; // the next data line holds absolute values (it follows a T line)
+
   /// True once the warm-up is over and the buffers are filling with plottable data.
   bool get ready => accepted >= warmup;
 
@@ -66,25 +75,40 @@ class SignalProcessor {
     accepted = 0;
     rejected = 0;
     samples = 0;
+    _newFormat = false;
+    _absoluteNext = false;
   }
 
   /// Handles one text line from the logger. Returns true if it was a data line.
-  /// A data line is a time code followed by at least one value; missing values count as zero.
-  /// Anything else (startup messages, bare numbers) is ignored.
+  /// Older firmware: a data line is a time code followed by at least one value. Newer firmware (after a
+  /// T line): a data line is one or more values. Missing values count as zero.
+  /// Anything else (startup messages, T/H/G lines, bare numbers from older firmware) is ignored.
   bool addLine(String line) {
-    final fields = line.trim().split(',');
-    if (fields.length < 2 || double.tryParse(fields[0]) == null) {
+    final trimmed = line.trim();
+    if (trimmed.startsWith('T,')) {
+      _newFormat = true;
+      _absoluteNext = true;
+      rejected++;
+      return false;
+    }
+    final fields = trimmed.split(',');
+    final first = _newFormat ? 0 : 1; // index of the first value (older firmware puts a time code first)
+    if (fields.length < first + 1 || double.tryParse(fields[0]) == null) {
       rejected++;
       return false;
     }
     final values = <double>[];
     for (var j = 0; j < nChan; j++) {
-      final v = j + 1 < fields.length ? double.tryParse(fields[j + 1]) : 0.0;
+      final v = j + first < fields.length ? double.tryParse(fields[j + first]) : 0.0;
       if (v == null) {
         rejected++;
         return false;
       }
       values.add(v * bitweights[j]);
+    }
+    if (_absoluteNext) {
+      values.fillRange(0, nChan, 0.0); // absolute values, not changes: treat as no change
+      _absoluteNext = false;
     }
     final storing = ready;
     final i = index;
