@@ -26,6 +26,20 @@ class SerialLink implements SvlPort {
   /// Latest status, as in [status].
   String currentStatus = 'starting';
 
+  /// True while the Plot tab is showing: the logger's startup prompt is then answered with the plotting commands
+  /// (sample rate, no compression, no SD card required, gains). These change how the logger runs until it restarts,
+  /// so on the other tabs (false) the prompt is left to the Check tab, which changes nothing.
+  bool plotMode = false;
+
+  /// Switches between the Plot tab's startup commands and none, restarting the logger (if connected) so that the
+  /// new choice applies from its next startup.
+  Future<void> setPlotMode(bool on) async {
+    if (plotMode == on) return;
+    plotMode = on;
+    _startup.reset();
+    if (currentStatus == 'connected' && !rawMode) await restartLogger();
+  }
+
   late final StartupCommands _startup = StartupCommands(
     write: write,
     restart: restartLogger,
@@ -133,7 +147,7 @@ class SerialLink implements SvlPort {
   }
 
   void _handleLine(String line) {
-    _startup.handleLine(line); // answers the startup prompt and checks the gains were set
+    if (plotMode) _startup.handleLine(line); // answers the startup prompt and checks the gains were set
     _lines.add(line);
   }
 

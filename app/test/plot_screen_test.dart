@@ -22,6 +22,8 @@ void main() {
     }));
 
     await tester.pumpWidget(const SerialSpectrogramApp());
+    await tester.tap(find.text('Plot')); // the app opens on the Check tab
+    await tester.pump();
     final full = tester.getSize(find.byType(PlotPanels));
     expect(find.text('Plug in the Aspen logger'), findsOneWidget);
 
@@ -39,7 +41,9 @@ void main() {
 
     expect(find.textContaining('Waiting'), findsNothing);
     expect(tester.getSize(find.byType(PlotPanels)), full); // didn't shrink when the card went away
-    expect(full.width, screen.width);
+    // sideways, the tabs are down the left edge; the plots get the rest of the width
+    final tabs = tester.getSize(find.byType(NavigationRail)).width + 1; // + the divider
+    expect(full.width, screen.width - tabs);
 
     // heights: spectrograms a quarter each, traces half
     final spectrogramHeights = tester.widgetList(find.byType(SpectrogramView)).map((w) => tester.getSize(find.byWidget(w)).height);

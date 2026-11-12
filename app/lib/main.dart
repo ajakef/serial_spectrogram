@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'firmware_screen.dart';
+import 'home_screen.dart';
 import 'rate_menu.dart';
 import 'serial_link.dart';
 import 'signal_processor.dart';
@@ -19,13 +20,16 @@ class SerialSpectrogramApp extends StatelessWidget {
     return MaterialApp(
       title: 'Aspen Plot',
       theme: ThemeData(brightness: Brightness.light), // plot colors assume a white background
-      home: const PlotScreen(),
+      home: const HomeScreen(),
     );
   }
 }
 
+/// The Plot tab. The connection to the logger belongs to [HomeScreen], which shares it with the other tabs.
 class PlotScreen extends StatefulWidget {
-  const PlotScreen({super.key});
+  const PlotScreen({super.key, required this.link});
+
+  final SerialLink link;
 
   @override
   State<PlotScreen> createState() => _PlotScreenState();
@@ -34,26 +38,27 @@ class PlotScreen extends StatefulWidget {
 class _PlotScreenState extends State<PlotScreen> {
   static const redrawInterval = Duration(milliseconds: 50);
 
-  final link = SerialLink();
+  SerialLink get link => widget.link;
   final processor = SignalProcessor();
   final redraw = ValueNotifier<int>(0);
   String status = 'starting';
   bool heardFromAspen = false; // any text received from the logger since connecting
   Timer? _timer;
+  final _subs = <StreamSubscription>[];
 
   @override
   void initState() {
     super.initState();
-    link.status.listen((s) {
+    status = link.currentStatus;
+    _subs.add(link.status.listen((s) {
       if (s == 'disconnected') heardFromAspen = false; // the plots stay as they were, so the data is kept
       setState(() => status = s);
-    });
-    link.lines.listen((line) {
+    }));
+    _subs.add(link.lines.listen((line) {
       if (line == 'Enter Serial Number') _startOver(); // the logger (re)started: its data starts afresh
       heardFromAspen = true;
       processor.addLine(line);
-    });
-    link.start();
+    }));
     _timer = Timer.periodic(redrawInterval, (_) => redraw.value++);
   }
 
@@ -76,7 +81,9 @@ class _PlotScreenState extends State<PlotScreen> {
   @override
   void dispose() {
     _timer?.cancel();
-    link.dispose();
+    for (final sub in _subs) {
+      sub.cancel();
+    }
     super.dispose();
   }
 
@@ -151,6 +158,7 @@ class _PlotScreenState extends State<PlotScreen> {
               valueListenable: redraw, // re-checked at every redraw, since the processor isn't a Listenable
               builder: (context, _, _) => _statusCard() ?? const SizedBox.shrink(),
             ),
+            if (status == 'connected') const Positioned(top: 4, left: 4, child: _PlotSettingsNote()),
             Positioned(top: 0, right: 48, child: RateMenu(onChanged: _changeRate)),
             Positioned(
               top: 0,
@@ -164,6 +172,22 @@ class _PlotScreenState extends State<PlotScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Reminder that plotting changes the logger's settings (gains, sample rate, SD errors hidden) until it restarts. Leaving
+/// the Plot tab restarts it with CONFIG.TXT's settings; unplugging here doesn't.
+class _PlotSettingsNote extends StatelessWidget {
+  const _PlotSettingsNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: Colors.amber.shade100.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(8)),
+      child: const Text('Plot settings in use: go to Check before unplugging',
+          style: TextStyle(fontSize: 11, color: Colors.black87)),
     );
   }
 }
