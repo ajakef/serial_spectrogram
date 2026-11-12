@@ -10,6 +10,6 @@ if [ ! -f android/key.properties ]; then
 fi
 flutter build apk --release
 cp build/app/outputs/flutter-apk/app-release.apk build/aspen-plot.apk
-apksigner=$(ls -d "$HOME"/Android/Sdk/build-tools/*/apksigner | sort -V | tail -1)
+apksigner=$(ls -d "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/*/apksigner | sort -V | tail -1)
 "$apksigner" verify --print-certs build/aspen-plot.apk | grep -E "Signer #1 certificate (DN|SHA-256)"
 echo "Built: $(pwd)/build/aspen-plot.apk"
