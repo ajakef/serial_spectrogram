@@ -1,17 +1,35 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'sample_rate.dart';
+
 /// Spectrogram matching scipy.signal.spectrogram(x, fs=200, window='hamming', nperseg=128,
-/// noverlap=112, detrend='linear') followed by log(), as in serial_spectrogram.py.
+/// noverlap=112, detrend='linear') followed by log(), as in serial_spectrogram.py. At other sample rates the
+/// segment length scales with the rate, as in the Python code, so the frequency resolution stays 1.56 Hz; but this
+/// FFT needs a power of 2, so at 1000 samples per second it's 512 (1.95 Hz) where Python uses 640.
 class Spectrogram {
-  static const fs = 200.0;
-  static const nPerSeg = 128;
+  static double get fs => SampleRate.current.toDouble();
+  static int get nPerSeg {
+    var n = 64; // 100 samples per second
+    while (n * 2 * SampleRate.standard <= 128 * SampleRate.current) {
+      n *= 2;
+    }
+    return n; // 128 at 200, 256 at 400, 512 at 800 and 1000
+  }
   static const overlap = 0.875;
-  static const step = nPerSeg - (overlap * nPerSeg) ~/ 1; // 16 samples between segments
-  static const nFreq = nPerSeg ~/ 2 + 1; // 65 frequencies, 0 to 100 Hz
+  static int get step => nPerSeg - (overlap * nPerSeg) ~/ 1; // 16 samples between segments at 200 Hz
+  static int get nFreq => nPerSeg ~/ 2 + 1; // 65 frequencies, 0 to 100 Hz, at 200 Hz
 
   /// Frequency of each row (Hz).
-  static final List<double> freqs = [for (var k = 0; k < nFreq; k++) k * fs / nPerSeg];
+  static List<double> get freqs {
+    if (_freqsRate != SampleRate.current) {
+      _freqsRate = SampleRate.current;
+      _freqs = [for (var k = 0; k < nFreq; k++) k * fs / nPerSeg];
+    }
+    return _freqs;
+  }
+  static List<double> _freqs = const [];
+  static int _freqsRate = 0;
 
   /// Time of each column (s): the center of each segment.
   static List<double> times(int nSamples) =>
@@ -19,14 +37,24 @@ class Spectrogram {
 
   static int segments(int nSamples) => (nSamples - nPerSeg) ~/ step + 1;
 
-  // Periodic Hamming window, as scipy.signal.get_window('hamming', 128) returns.
-  static final Float64List _window = Float64List.fromList(
-      [for (var n = 0; n < nPerSeg; n++) 0.54 - 0.46 * math.cos(2 * math.pi * n / nPerSeg)]);
-  static final double _scale = 1 / (fs * _window.fold(0.0, (sum, w) => sum + w * w)); // 'density' scaling
+  // Periodic Hamming window, as scipy.signal.get_window('hamming', 128) returns, and the 'density' scaling. Made
+  // again when the sample rate changes.
+  static Float64List _window = Float64List(0);
+  static double _scale = 0;
+  static int _windowRate = 0;
+  static void _setUpWindow() {
+    if (_windowRate == SampleRate.current) return;
+    _windowRate = SampleRate.current;
+    final n = nPerSeg;
+    _window = Float64List.fromList([for (var i = 0; i < n; i++) 0.54 - 0.46 * math.cos(2 * math.pi * i / n)]);
+    _scale = 1 / (fs * _window.fold(0.0, (sum, w) => sum + w * w));
+  }
 
   /// log(power spectral density), indexed [segment * nFreq + frequency].
   /// Zero power gives NaN (Python turns zeros into NaN before taking the log).
   static Float64List logPsd(Float64List x) {
+    _setUpWindow();
+    final nPerSeg = Spectrogram.nPerSeg, step = Spectrogram.step, nFreq = Spectrogram.nFreq;
     final nSeg = segments(x.length);
     final out = Float64List(nSeg * nFreq);
     final re = Float64List(nPerSeg);
@@ -46,8 +74,8 @@ class Spectrogram {
 
   /// Copies one segment into [out], removing its least-squares straight line and applying the window.
   static void _detrendAndWindow(Float64List x, int start, Float64List out) {
-    const n = nPerSeg;
-    const tMean = (n - 1) / 2;
+    final n = out.length;
+    final tMean = (n - 1) / 2;
     var xMean = 0.0;
     for (var i = 0; i < n; i++) {
       xMean += x[start + i];

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'firmware_screen.dart';
+import 'rate_menu.dart';
 import 'serial_link.dart';
 import 'signal_processor.dart';
 import 'spectrogram_plot.dart';
@@ -59,6 +60,12 @@ class _PlotScreenState extends State<PlotScreen> {
   void _startOver() {
     processor.reset();
     heardFromAspen = false;
+  }
+
+  /// A new sample rate from the menu: the plots start afresh, and the Aspen restarts to take the rate at its prompt.
+  void _changeRate() {
+    setState(_startOver); // also makes the plot buffers the new length
+    if (status == 'connected') link.restartLogger();
   }
 
   Future<void> _openFirmwareScreen() async {
@@ -144,6 +151,7 @@ class _PlotScreenState extends State<PlotScreen> {
               valueListenable: redraw, // re-checked at every redraw, since the processor isn't a Listenable
               builder: (context, _, _) => _statusCard() ?? const SizedBox.shrink(),
             ),
+            Positioned(top: 0, right: 48, child: RateMenu(onChanged: _changeRate)),
             Positioned(
               top: 0,
               right: 0,

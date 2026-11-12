@@ -19,7 +19,7 @@ void main() {
       x[n] = math.sin(0.37 * n) + 0.3 * math.cos(1.91 * n) + 1e-3 * n + 0.05 * math.sin(1.23e-4 * n * n);
     }
     final z = Spectrogram.logPsd(x);
-    const nf = Spectrogram.nFreq;
+    final nf = Spectrogram.nFreq;
     final times = Spectrogram.times(x.length);
 
     expect(times.length, rows[0][0].toInt());

@@ -96,7 +96,7 @@ class SpectrogramImage {
   static const qmin = 0.02, qmax = 0.98;
 
   static SpectrogramImage fromData(Float64List data) {
-    const nf = Spectrogram.nFreq;
+    final nf = Spectrogram.nFreq;
     final z = Spectrogram.logPsd(data);
     final nSeg = z.length ~/ nf;
     final noDc = [for (var s = 0; s < nSeg; s++) for (var k = 1; k < nf; k++) z[s * nf + k]];
@@ -131,8 +131,9 @@ class SpectrogramPainter extends CustomPainter {
   final String title;
   final String? yLabel;
 
-  static const fMin = 1.0, fMax = 100.0; // Hz; the Python tick at 1 Hz extends the axis down to it
-  static const freqTicks = [1, 3, 10, 30, 100];
+  static const fMin = 1.0; // Hz; the Python tick at 1 Hz extends the axis down to it
+  static double get fMax => Spectrogram.fs / 2; // 100 Hz at 200 samples per second
+  static List<int> get freqTicks => [for (final f in [1, 3, 10, 30, 100, 300]) if (f <= fMax) f];
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -141,7 +142,7 @@ class SpectrogramPainter extends CustomPainter {
         plot.bottom - (math.log(f) - math.log(fMin)) / (math.log(fMax) - math.log(fMin)) * plot.height;
 
     final img = image;
-    if (img != null) {
+    if (img != null && img.height == Spectrogram.nFreq - 2) { // not one made before a sample rate change
       // Columns are evenly spaced in time; rows are evenly spaced in frequency, so on the
       // logarithmic axis each row gets its own height.
       final times = Spectrogram.times(SignalProcessor.nFull);

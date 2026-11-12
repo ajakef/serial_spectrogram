@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'sample_rate.dart';
+
 /// Parsing, scaling, integration and 1 Hz high-pass filtering of the logger's data lines.
 /// Mirrors utils.parse_line in the Python code (including its filter and scaling constants),
 /// with two deliberate differences: a data line with fewer than four values has its missing
@@ -15,9 +17,10 @@ import 'dart:typed_data';
 /// data line after a T line holds absolute values rather than changes. The first T line switches to the newer
 /// format. The absolute line after a T line is taken as "no change", which keeps the plot continuous.
 class SignalProcessor {
-  static const nFull = 4096; // samples kept: 20.48 s at 200 Hz
+  /// Samples kept: 4096 at 200 Hz (20.48 s), scaled with the sample rate so the plots always span 20.48 s.
+  static int get nFull => 4096 * SampleRate.current ~/ SampleRate.standard;
   static const nChan = 4; // infrasound, vertical, north, east
-  static const dt = 0.005;
+  static double get dt => 1 / SampleRate.current;
   static const cornerFreq = 1.0; // Hz
   static const defaultWarmup = 10; // samples (0.05 s) discarded after startup; same as n_warmup in Python
 
@@ -32,20 +35,27 @@ class SignalProcessor {
     for (var i = 1; i < nChan; i++) _bitweightV / _gainSeismic / _sensitivitySeismic * 1e3, // mm/s
   ];
 
-  // First-order Butterworth high-pass, same as scipy.signal.butter(1, corner/nyquist, 'highpass').
-  static final double _k = math.tan(math.pi * cornerFreq * dt); // pi * (corner/nyquist) / 2
-  static final double _b0 = 1 / (1 + _k);
-  static final double _b1 = -1 / (1 + _k);
-  static final double _a1 = (_k - 1) / (1 + _k);
+  // First-order Butterworth high-pass, same as scipy.signal.butter(1, corner/nyquist, 'highpass'). Depends on the
+  // sample rate, so it's set up again by reset().
+  double _b0 = 0, _b1 = 0, _a1 = 0;
+  void _setUpFilter() {
+    final k = math.tan(math.pi * cornerFreq * dt); // pi * (corner/nyquist) / 2
+    _b0 = 1 / (1 + k);
+    _b1 = -1 / (1 + k);
+    _a1 = (k - 1) / (1 + k);
+  }
 
-  SignalProcessor({this.warmup = defaultWarmup});
+  SignalProcessor({this.warmup = defaultWarmup}) {
+    _setUpFilter();
+  }
 
   final int warmup;
 
   /// Integrated ("raw") and filtered data, one row per channel. These are ring buffers:
-  /// [index] is the position the next sample will be written to.
-  final List<Float64List> raw = List.generate(nChan, (_) => Float64List(nFull));
-  final List<Float64List> filtered = List.generate(nChan, (_) => Float64List(nFull));
+  /// [index] is the position the next sample will be written to. Their length is [nFull], so reset() makes new ones
+  /// when the sample rate has changed.
+  List<Float64List> raw = List.generate(nChan, (_) => Float64List(nFull));
+  List<Float64List> filtered = List.generate(nChan, (_) => Float64List(nFull));
   int index = 0;
 
   // Most recent sample (the filter's memory). Kept separately because nothing is stored in the buffers
@@ -63,12 +73,17 @@ class SignalProcessor {
   /// True once the warm-up is over and the buffers are filling with plottable data.
   bool get ready => accepted >= warmup;
 
-  /// Starts over, e.g. after the logger is unplugged or restarts.
+  /// Starts over, e.g. after the logger is unplugged or restarts, or the sample rate changes.
   void reset() {
+    if (raw[0].length != nFull) {
+      raw = List.generate(nChan, (_) => Float64List(nFull));
+      filtered = List.generate(nChan, (_) => Float64List(nFull));
+    }
     for (var j = 0; j < nChan; j++) {
       raw[j].fillRange(0, nFull, 0);
       filtered[j].fillRange(0, nFull, 0);
     }
+    _setUpFilter();
     _lastRaw.fillRange(0, nChan, 0);
     _lastFiltered.fillRange(0, nChan, 0);
     index = 0;

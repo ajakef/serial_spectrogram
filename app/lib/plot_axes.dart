@@ -4,7 +4,7 @@ import 'signal_processor.dart';
 
 /// Layout and drawing shared by the three panels, so their time axes line up.
 class PlotAxes {
-  static const duration = SignalProcessor.nFull * SignalProcessor.dt; // seconds shown
+  static double get duration => SignalProcessor.nFull * SignalProcessor.dt; // seconds shown (20.48)
   static const left = 44.0; // room for frequency labels
   static const right = 12.0;
   static const xLabelHeight = 20.0;
