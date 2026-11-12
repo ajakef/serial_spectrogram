@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:serial_spectrogram/sample_rate.dart';
 import 'package:serial_spectrogram/signal_processor.dart';
+import 'package:serial_spectrogram/spectrogram.dart';
 
 // Compares the app's parser to the output of the original Python code
 // (expected_sample.csv, made by make_expected.py) on a real logger capture.
@@ -111,5 +113,29 @@ void main() {
 
     p.reset(); // e.g. a different logger plugged in: back to the older format until a T line arrives
     expect(p.addLine('5'), isFalse);
+  });
+
+  test('a new sample rate: buffers, filter and spectrogram follow it after reset()', () {
+    addTearDown(() => SampleRate.current = SampleRate.standard);
+    final p = SignalProcessor(warmup: 0);
+    expect(p.raw[0].length, 4096);
+    expect(Spectrogram.nPerSeg, 128);
+    SampleRate.current = 1000;
+    p.reset();
+    expect(p.raw[0].length, 20480); // still 20.48 s
+    expect(p.filtered[3].length, 20480);
+    expect(SignalProcessor.dt, 0.001);
+    expect(Spectrogram.nPerSeg, 512); // a power of 2 for the FFT (Python uses 640)
+    expect(Spectrogram.freqs.last, 500);
+    for (var n = 0; n < 20490; n++) {
+      p.addLine('${n % 7 - 3},1,-1,0');
+    }
+    expect(p.index, 10); // wrapped around the longer buffer
+    final z = Spectrogram.logPsd(p.filtered[0]);
+    expect(z.length, Spectrogram.segments(20480) * Spectrogram.nFreq);
+    SampleRate.current = 100;
+    p.reset();
+    expect(p.raw[0].length, 2048);
+    expect(Spectrogram.nPerSeg, 64);
   });
 }
