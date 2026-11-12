@@ -1,10 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- For downloading firmware from GitHub -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Sites tab: waypoints and navigation (the phone's GPS) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="Aspen Plot"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:hasFragileUserData="true">
+        <!-- hasFragileUserData: uninstalling asks whether to keep the app's data (sites, photos, startup logs) -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

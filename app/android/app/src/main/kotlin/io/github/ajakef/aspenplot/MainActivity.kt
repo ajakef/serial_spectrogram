@@ -2,14 +2,18 @@ package io.github.ajakef.aspenplot
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.GeomagneticField
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
 import com.hoho.android.usbserial.driver.UsbSerialPort
@@ -19,6 +23,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 // Bridge between the Flutter (Dart) code and the USB serial port.
 // Dart calls "connect"/"write"/"setBaud"/"setRts"/"disconnect" on the method channel; bytes from the
@@ -32,6 +37,7 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
     private var port: UsbSerialPort? = null
     private var ioManager: SerialInputOutputManager? = null
     private var pendingPick: MethodChannel.Result? = null
+    private var pickToCache = false // "pickFileToCache": copy the chosen file to the cache instead of sending its bytes
     private val pickRequest = 1
     private val maxPickBytes = 2 * 1024 * 1024
 
@@ -67,9 +73,10 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
                     }
                 }
                 "filesDir" -> result.success(filesDir.path)
-                "pickFile" -> {
+                "pickFile", "pickFileToCache" -> {
                     pendingPick?.success(null)
                     pendingPick = result
+                    pickToCache = call.method == "pickFileToCache"
                     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
                         .addCategory(Intent.CATEGORY_OPENABLE)
                         .setType("*/*")
@@ -92,6 +99,26 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
                     }
                 }
                 "disconnect" -> { disconnect(); result.success(null) }
+                "saveToDownloads" -> {
+                    // Copies a file into Download/Aspen, where the Files app and a computer (over USB) can see it.
+                    val args = call.arguments as Map<*, *>
+                    try {
+                        result.success(saveToDownloads(args["path"] as String, args["name"] as String, args["mime"] as String))
+                    } catch (e: Exception) {
+                        result.error("saveToDownloads", e.message, null)
+                    }
+                }
+                "declination" -> {
+                    // Degrees east of true north that a compass points, from Android's world magnetic model.
+                    val args = call.arguments as Map<*, *>
+                    val field = GeomagneticField(
+                        (args["lat"] as Double).toFloat(),
+                        (args["lon"] as Double).toFloat(),
+                        (args["alt"] as Double).toFloat(),
+                        System.currentTimeMillis()
+                    )
+                    result.success(field.declination.toDouble())
+                }
                 else -> result.notImplemented()
             }
         }
@@ -131,6 +158,12 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
             val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                 if (it.moveToFirst()) it.getString(0) else null
             } ?: "file"
+            if (pickToCache) {
+                val copy = File(cacheDir, "picked_" + name.replace('/', '_'))
+                contentResolver.openInputStream(uri)!!.use { input -> copy.outputStream().use { input.copyTo(it) } }
+                result.success(mapOf("name" to name, "path" to copy.path))
+                return
+            }
             val bytes = contentResolver.openInputStream(uri)!!.use { it.readNBytes(maxPickBytes + 1) }
             if (bytes.size > maxPickBytes) {
                 result.error("pickFile", "That file is too big to be firmware.", null)
@@ -139,6 +172,22 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
             }
         } catch (e: Exception) {
             result.error("pickFile", e.message, null)
+        }
+    }
+
+    private fun saveToDownloads(path: String, name: String, mime: String): String {
+        if (Build.VERSION.SDK_INT >= 29) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Aspen")
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw Exception("Android refused to create the file")
+            contentResolver.openOutputStream(uri)!!.use { out -> File(path).inputStream().use { it.copyTo(out) } }
+            return "Download/Aspen/$name"
+        } else {
+            throw Exception("needs Android 10 or newer; use Send instead")
         }
     }
 

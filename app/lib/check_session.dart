@@ -48,6 +48,9 @@ class CheckSession extends ChangeNotifier {
   bool _notifyScheduled = false;
 
   bool get connected => status == 'connected';
+
+  /// Name of the log file this check is being saved to (in [LogRecorder.folder]), if any lines have arrived.
+  String? get logFileName => _recorder?.fileName;
   bool get writing => writeStage == WriteStage.sending || writeStage == WriteStage.saving || writeStage == WriteStage.checking;
 
   void start() {

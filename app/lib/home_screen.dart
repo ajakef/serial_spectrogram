@@ -6,6 +6,8 @@ import 'check_screen.dart';
 import 'check_session.dart';
 import 'main.dart';
 import 'serial_link.dart';
+import 'sites/site_store.dart';
+import 'sites/sites_screen.dart';
 
 /// The app's tabs: Plot, Check, and Sites. It owns the one connection to the logger, which the Plot and Check tabs
 /// share. Only the Plot tab answers the logger's startup prompt with commands that change its settings, so moving
@@ -24,11 +26,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final link = SerialLink();
   late final check = CheckSession(link);
+  final sites = SiteStore();
   late int tab = widget.initialTab;
 
   static const _destinations = [
     (icon: Icons.show_chart, label: 'Plot'),
     (icon: Icons.fact_check_outlined, label: 'Check'),
+    (icon: Icons.place_outlined, label: 'Sites'),
   ];
 
   @override
@@ -42,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     check.dispose();
+    sites.dispose();
     link.dispose();
     super.dispose();
   }
@@ -54,7 +59,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _body() => switch (tab) {
         HomeScreen.plotTab => PlotScreen(link: link),
-        _ => CheckScreen(session: check),
+        HomeScreen.checkTab => CheckScreen(session: check),
+        _ => SitesScreen(store: sites, check: check),
       };
 
   @override
