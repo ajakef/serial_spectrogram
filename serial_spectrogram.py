@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import re
 import time
 import serial
@@ -7,6 +8,7 @@ import matplotlib.animation as animation
 import itertools
 import numpy as np
 from scipy.signal import spectrogram
+import utils
 from utils import get_serial, parse_line, baud_rate, set_up_line_plot, image
 
 #sensitivity_infrasound = 0.01/125 * 3.2/12
@@ -21,14 +23,27 @@ seismic_plot_gain = 1
 infrasound_plot_gain = -0.125
 #seismic_plot_gain = 100
 
-N_full = 4096
+# Sample rate: 200 sps unless --rate gives another. The plotter sends it to the logger at startup (CF:sample_rate=),
+# so the two always agree. Window lengths are set for 200 sps and scaled with the rate (set_sample_rate), so the plot
+# always spans ~20 s and the spectrogram's frequency resolution stays the same.
+sample_rates = [100, 200, 400, 800, 1000] # the rates the logger accepts
+sample_rate = 200
+N_full = 4096 # samples shown (20.48 s at 200 sps)
 #N_full = 1024
-N_sub = 128
+N_sub = 128 # samples per spectrogram window, and per plot update
 n_warmup = 10 # samples to discard at startup; they contain large transients that would distort the plot scales
 n_chan = 4
 overlap = 0.875
-dt = 0.005
+dt = 1 / sample_rate
 ylim = [-1, 1]
+
+def set_sample_rate(rate):
+    global sample_rate, dt, N_full, N_sub
+    sample_rate = rate
+    dt = 1 / rate
+    N_full = 4096 * rate // 200
+    N_sub = 128 * rate // 200
+    utils.set_sample_rate(rate) # the high-pass filter in parse_line
 
 show_infrasound = True
 show_seismic = True
@@ -40,6 +55,43 @@ def firmware_checks_gains(version_line):
     # Firmware 0.8.2 and later reply "Gains accepted: ..." or "Gains rejected ..." to a GN: command
     m = re.search(rb'Firmware: (\d+)\.(\d+)\.(\d+)', version_line)
     return m is not None and tuple(int(x) for x in m.groups()) >= (0, 8, 2)
+
+def firmware_takes_config(version_line):
+    # Firmware 0.8.5-15 and later take "CF:<name>=<value>" commands and reply "Config set: ..." or "Config rejected ...".
+    # (0.8.6-x builds came before the version numbers went back to 0.8.5 on 2026-10-30, and don't.)
+    m = re.search(rb'Firmware: (\d+)\.(\d+)\.(\d+)-(\d+)', version_line)
+    if m is None:
+        return False
+    major, minor, patch, build = (int(x) for x in m.groups())
+    return (major, minor) >= (0, 9) or (major, minor, patch) == (0, 8, 5) and build >= 15
+
+def wait_for_config_reply(ser, timeout = 3):
+    # returns the reply line containing "Config set" or "Config rejected", or None if none arrives in time
+    t_start = time.time()
+    while time.time() - t_start < timeout:
+        line = ser.readline()
+        if b'Config set' in line or b'Config rejected' in line:
+            return line.strip()
+    return None
+
+def send_sample_rate(ser, takes_config, max_sends = 3):
+    # Sends CF:sample_rate=<rate>. Returns True once the logger has accepted it (or, for older firmware that can't
+    # take it, if the rate is the 200 sps those loggers use by default), False otherwise.
+    if not takes_config:
+        if sample_rate != 200:
+            print(f'This firmware cannot be told the sample rate; the plot assumes {sample_rate} sps')
+        return True
+    command = f'sample_rate={sample_rate}'.encode()
+    for send in range(max_sends):
+        ser.write(b'CF:' + command + b'\r\n')
+        reply = wait_for_config_reply(ser)
+        print(reply)
+        if reply is None:
+            return False # no reply: restart and try again
+        if b'Config rejected' in reply:
+            continue # the logger is still listening: send again
+        return reply.split(b':', 1)[-1].strip() == command # accepted, but garbled into another setting: restart
+    return False
 
 def wait_for_gain_reply(ser, timeout = 3):
     # returns the reply line containing "Gains accepted" or "Gains rejected", or None if none arrives in time
@@ -65,11 +117,13 @@ def start_logger(max_restarts = 3, max_sends = 3):
         prompt_timeout = 30 # s
         n_data_lines = 0
         checks_gains = False
+        takes_config = False
         t_start = time.time()
         while time.time() - t_start < prompt_timeout:
             line = ser.readline()
             if b'Firmware:' in line:
                 checks_gains = firmware_checks_gains(line)
+                takes_config = firmware_takes_config(line)
             if b'Enter Serial Number' in line:
                 break
             n_data_lines = n_data_lines + 1 if line.split(b',')[0].strip().lstrip(b'-').isdigit() else 0
@@ -82,6 +136,10 @@ def start_logger(max_restarts = 3, max_sends = 3):
 
         ser.write(b'NCM\r\n') # command for "no compression"
         ser.write(b'NSD\r\n') # "no SD card required": plotting works without a card, and SD errors aren't shown (older firmware ignores it)
+        if not send_sample_rate(ser, takes_config):
+            print('The sample rate was not set; restarting the logger and trying again')
+            ser.close()
+            continue
         if not checks_gains: # older firmware: send once, no reply to check
             ser.write(b'GN:' + gains + b'\r\n\n') # the extra blank line tells the logger no more commands are coming, so it skips its wait
             return ser
@@ -98,7 +156,8 @@ def start_logger(max_restarts = 3, max_sends = 3):
             break # accepted, but not the gains sent (e.g. a dropped digit): restart and try again
         print('Gains were not set correctly; restarting the logger and trying again')
         ser.close()
-    raise Exception(f'Could not set the logger\'s gains to {gains.decode()} after {max_restarts} tries')
+    raise Exception(f'Could not set the logger\'s gains to {gains.decode()} and sample rate to {sample_rate} after '
+                    f'{max_restarts} tries')
 
 class UsbDisconnected(BaseException):
     # A BaseException rather than an Exception: utils.parse_line catches every Exception (a garbled line) and keeps
@@ -194,17 +253,17 @@ def run(data): # this function accepts the "yields" of the data_gen function as 
     artists = []
     nplots = show_seismic+show_infrasound+show_traces
     current_time = data[-1] * dt
-    freqticks = [1, 3, 10, 30, 100]
+    freqticks = [f for f in [1, 3, 10, 30, 100, 300] if f < sample_rate / 2]
     if show_infrasound:
         plt.subplot(nplots, 1, 1)
-        freqs, times, sg = spectrogram(data[0]+eps, fs = 200, window = 'hamming', nperseg = N_sub, noverlap = overlap*N_sub, detrend = 'linear')#, axis = axes[0]) axis input doesn't work for some reason
+        freqs, times, sg = spectrogram(data[0]+eps, fs = sample_rate, window = 'hamming', nperseg = N_sub, noverlap = overlap*N_sub, detrend = 'linear')#, axis = axes[0]) axis input doesn't work for some reason
         sg[sg == 0] = np.nan # prevent warnings when taking log(0)
         artists.append(image(np.log(sg.T[:,1:]), times, freqs[1:], log_y = True, ax = axes[0,0]))
         artists.append(axes[0,0].plot([current_time, current_time], axes[0,0].get_ylim(), 'k-')[0]) # axes[0,0].plot returns a list of artists, not just one
         axes[0,0].set_yticks(np.log10(freqticks), freqticks)
     if show_seismic:
         plt.subplot(nplots, 1, 1+show_infrasound)
-        freqs, times, sg = spectrogram(data[1]+eps, fs = 200, window = 'hamming', nperseg = N_sub, noverlap = overlap*N_sub, detrend = 'linear')#, axis = axes[0]) axis input doesn't work for some reason
+        freqs, times, sg = spectrogram(data[1]+eps, fs = sample_rate, window = 'hamming', nperseg = N_sub, noverlap = overlap*N_sub, detrend = 'linear')#, axis = axes[0]) axis input doesn't work for some reason
         sg[sg == 0] = np.nan
         artists.append(image(np.log(sg.T[:,1:]), times, freqs[1:], log_y = True, ax = axes[show_infrasound+0,0]))
         artists.append(axes[show_infrasound+0,0].plot([current_time, current_time], axes[0,0].get_ylim(), 'k-')[0]) # axes[0,0].plot returns a list of artists, not just one
@@ -226,6 +285,10 @@ def run(data): # this function accepts the "yields" of the data_gen function as 
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description = 'Real-time plot of an Aspen logger\'s data on the serial port.')
+    parser.add_argument('--rate', type = int, default = 200, choices = sample_rates,
+                        help = 'sample rate (samples per second) to set on the logger and plot at; default 200')
+    set_sample_rate(parser.parse_args().rate)
     fig, axes = plt.subplots(show_seismic + show_infrasound + show_traces, 1, squeeze = False)  # Setup figure and axis
     if show_infrasound:
         axes[0,0].set_title('Infrasound')

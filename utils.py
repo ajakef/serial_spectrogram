@@ -19,6 +19,13 @@ corner_freq = 1 # Hz
 nyquist = 0.5/dt
 [b, a] = scipy.signal.butter(1, corner_freq/nyquist, 'highpass')
 
+def set_sample_rate(rate):
+    # the high-pass filter in parse_line depends on the sample rate (200 sps unless this is called)
+    global dt, nyquist, b, a
+    dt = 1 / rate
+    nyquist = 0.5 / dt
+    [b, a] = scipy.signal.butter(1, corner_freq/nyquist, 'highpass')
+
 def get_serial():
     port_list = sorted(glob.glob('/dev/ttyUSB*') + # linux serial ports
                        glob.glob('/dev/tty.usbserial*')) # mac serial ports
