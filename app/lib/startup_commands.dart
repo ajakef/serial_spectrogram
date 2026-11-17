@@ -22,7 +22,9 @@ class StartupCommands {
     this.replyTimeout = const Duration(seconds: 3),
   });
 
-  static const gains = '128,32,32,32'; // standard gains
+  // Standard gains; at 2000 samples per second the Aspen records the infrasound channel only (firmware 1.0.0-8+), so
+  // the seismic channels are sent as off rather than having the logger turn them off and show a settings error.
+  static String get gains => SampleRate.current >= 2000 ? '128,0,0,0' : '128,32,32,32';
   static const maxSends = 3; // per startup
   static const maxRestarts = 3;
 

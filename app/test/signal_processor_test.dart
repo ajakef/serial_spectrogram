@@ -137,5 +137,10 @@ void main() {
     p.reset();
     expect(p.raw[0].length, 2048);
     expect(Spectrogram.nPerSeg, 64);
+    SampleRate.current = 2000;
+    p.reset();
+    expect(p.raw[0].length, 40960);
+    expect(Spectrogram.nPerSeg, 1024); // Python uses 1280
+    expect(Spectrogram.freqs.last, 1000);
   });
 }

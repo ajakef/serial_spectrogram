@@ -2,7 +2,7 @@
 /// agree. 200 samples per second unless the user picks another from the menu; not saved between app runs.
 /// Same as serial_spectrogram.py's --rate option.
 class SampleRate {
-  static const choices = [100, 200, 400, 800, 1000]; // the rates the logger accepts
+  static const choices = [100, 200, 400, 800, 1000, 2000]; // the rates the logger accepts (2000: firmware 1.0.0-8+)
   static const standard = 200;
   static int current = standard;
 }

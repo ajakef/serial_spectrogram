@@ -14,7 +14,7 @@ class Spectrogram {
     while (n * 2 * SampleRate.standard <= 128 * SampleRate.current) {
       n *= 2;
     }
-    return n; // 128 at 200, 256 at 400, 512 at 800 and 1000
+    return n; // 128 at 200, 256 at 400, 512 at 800 and 1000, 1024 at 2000
   }
   static const overlap = 0.875;
   static int get step => nPerSeg - (overlap * nPerSeg) ~/ 1; // 16 samples between segments at 200 Hz
