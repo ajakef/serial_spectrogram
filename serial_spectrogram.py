@@ -26,7 +26,7 @@ infrasound_plot_gain = -0.125
 # Sample rate: 200 sps unless --rate gives another. The plotter sends it to the logger at startup (CF:sample_rate=),
 # so the two always agree. Window lengths are set for 200 sps and scaled with the rate (set_sample_rate), so the plot
 # always spans ~20 s and the spectrogram's frequency resolution stays the same.
-sample_rates = [100, 200, 400, 800, 1000] # the rates the logger accepts
+sample_rates = [100, 200, 400, 800, 1000, 2000] # the rates the logger accepts (2000: firmware 1.0.0-8+, infrasound only)
 sample_rate = 200
 N_full = 4096 # samples shown (20.48 s at 200 sps)
 #N_full = 1024
@@ -289,6 +289,9 @@ if __name__ == '__main__':
     parser.add_argument('--rate', type = int, default = 200, choices = sample_rates,
                         help = 'sample rate (samples per second) to set on the logger and plot at; default 200')
     set_sample_rate(parser.parse_args().rate)
+    if sample_rate >= 2000: # the logger records the infrasound channel only at 2000 sps (firmware 1.0.0-8+)
+        gains = b'128,0,0,0'
+        show_seismic = False
     fig, axes = plt.subplots(show_seismic + show_infrasound + show_traces, 1, squeeze = False)  # Setup figure and axis
     if show_infrasound:
         axes[0,0].set_title('Infrasound')

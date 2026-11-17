@@ -52,6 +52,19 @@ void main() {
     expect(h.gainCommands, 0);
   });
 
+  test('at 2000 samples per second the seismic channels are sent as off (infrasound only)', () async {
+    SampleRate.current = 2000;
+    addTearDown(() => SampleRate.current = SampleRate.standard);
+    final h = _Harness()..boot('1.0.0-9_2026-11-17T09:14:21Z');
+    expect(h.sent.last, 'CF:sample_rate=2000\r\n');
+    h.commands.handleLine('Config set: sample_rate=2000');
+    expect(h.sent.last, 'GN:128,0,0,0\r\n\n');
+    h.commands.handleLine('Gains accepted: 128,0,0,0');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(h.restarts, 0);
+    expect(h.problem, isNull);
+  });
+
   test('firmware without CF: (0.8.6-x, 0.8.5 before build 15) gets only the gains', () {
     for (final v in ['0.8.6-3_x', '0.8.5-14_x']) {
       final h = _Harness()..boot(v);
