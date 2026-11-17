@@ -44,7 +44,7 @@ void main() {
     final text = '# my settings\n\n${repoFile.replaceFirst('400 #', '300 #').replaceFirst('- # network', 'X-1 # network')}'
         'EXTRA\n';
     final p = problems(text);
-    expect(p, contains('7: Sample rate must be one of 100, 200, 400, 800, 1000'));
+    expect(p, contains('7: Sample rate must be one of 100, 200, 400, 800, 1000, 2000'));
     expect(p, contains('12: Codes may hold only letters and digits ("-" for the default)'));
     expect(p.last, startsWith('19: Extra line'));
   });
@@ -96,6 +96,10 @@ void main() {
     ]);
     final off = ConfigValues.fromReport(reported)..gains = [0, 0, 0, 0];
     expect(off.problems(), contains('At least one channel must be on (gain above 0)'));
+    final fast = ConfigValues.fromReport(reported)..sampleRate = 2000;
+    expect(fast.problems(), ['At 2000 per second only channel 1 records: set the channel 2-4 gains to 0']);
+    fast.gains = [128, 0, 0, 0];
+    expect(fast.problems(), isEmpty);
   });
 
   test('differences after saving are reported', () {

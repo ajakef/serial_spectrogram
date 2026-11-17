@@ -24,7 +24,7 @@ final _commentPatterns = [
 ];
 
 const allowedGains = [0, 1, 2, 4, 8, 16, 32, 64, 128];
-const allowedRates = [100, 200, 400, 800, 1000];
+const allowedRates = [100, 200, 400, 800, 1000, 2000]; // 2000: firmware 1.0.0-8+, channel 1 only
 
 /// One line of CONFIG.TXT, with the setting it's read as and anything wrong with it.
 class ConfigLineNote {
@@ -158,6 +158,9 @@ class ConfigValues {
     }
     if (gains.every((g) => g == 0)) out.add('At least one channel must be on (gain above 0)');
     if (!allowedRates.contains(sampleRate)) out.add('Sample rate must be one of ${allowedRates.join(', ')}');
+    if (sampleRate >= 2000 && gains.skip(1).any((g) => g != 0)) {
+      out.add('At 2000 per second only channel 1 records: set the channel 2-4 gains to 0');
+    }
     if (gpsMode < 1 || gpsMode > 4) out.add('GPS mode must be 1-4');
     if (gpsCycleMinutes < 1 || gpsCycleMinutes > 255) out.add('GPS cycle must be 1-255 minutes');
     if (gpsQuota < 1 || gpsQuota > 255) out.add('GPS quota must be 1-255 fixes');
