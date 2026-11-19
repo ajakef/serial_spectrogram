@@ -55,6 +55,11 @@ latest health line, and the whole startup log. The circular-arrow button restart
 Long lines can be dragged sideways (a thin bar at the bottom shows where you are). Dragging the text toward older lines turns autoscroll off; tick the box to jump back to the end. The baud rate goes
 back to the logger's 500,000 when you leave the tab. Nothing is sent to the logger from this tab.
 
+**Raw tab colors:** the palette button opens a screen listing recent lines that contain commas. Tap one as the example,
+then tap each field to give it a text color and/or a highlight color, then Save. The scheme is saved on the phone and
+used only for lines with exactly as many fields as the example (so startup messages and other kinds of lines stay plain).
+The **Colors** box turns it on and off. A line still arriving can show the wrong colors until it is complete.
+
 **Sites tab:** **New site** (with the logger plugged in and checked, its serial number and codes are filled in),
 then **Take waypoint** while standing at the sensors (it averages 30 s of GPS), then **Add the setup visit**:
 notes (tap the keyboard's microphone to dictate; check that dictation works in airplane mode before going to a site
@@ -104,6 +109,7 @@ It is a [Flutter](https://flutter.dev) app (Dart code) with a small amount of Ko
 | `lib/boot_report.dart` | Reads the logger's startup report into the Check tab's checklist (matches the firmware's wording) |
 | `lib/check_session.dart` | Check tab's side of the connection: asks for CONFIG.TXT (GT:), saves settings (GN:/CF:, then SVC), saves logs |
 | `lib/raw_screen.dart` | Raw tab: text monitor, baud menu, autoscroll, rotation lock |
+| `lib/raw_colors.dart`, `lib/raw_color_editor.dart` | Raw tab's saved color scheme (per field, for lines with a matching number of fields) and the screen that makes it |
 | `lib/check_screen.dart`, `lib/config_editor.dart`, `lib/saved_logs_screen.dart` | Check tab screens |
 | `lib/config_file.dart` | CONFIG.TXT line checker; the editor's settings and the commands that set them |
 | `lib/sites/` | Sites tab: data (`site_model.dart`), storage, export/import zip (`site_exchange.dart`), GPS and compass math (`geo.dart`), screens |

@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'raw_color_editor.dart';
+import 'raw_colors.dart';
 import 'serial_link.dart';
 
 /// How the Raw tab turns with the phone.
@@ -48,6 +50,7 @@ class _RawScreenState extends State<RawScreen> {
   double _sideways = 0; // how far the text is dragged to the left
   int _dropped = 0; // lines removed from the top since the last redraw
   bool autoscroll = true;
+  RawColorScheme? scheme; // saved on the phone; null until one is made
   RawOrientation orientation = RawOrientation.auto;
   late int baud = widget.link.baud;
   String status = '';
@@ -60,6 +63,9 @@ class _RawScreenState extends State<RawScreen> {
   void initState() {
     super.initState();
     status = link.currentStatus;
+    RawColorScheme.load().then((loaded) {
+      if (mounted && scheme == null && loaded != null) setState(() => scheme = loaded);
+    });
     _subs.add(link.bytes.listen(_addBytes));
     _subs.add(link.status.listen((s) {
       if (s == 'connected' && baud != SerialLink.normalBaud) {
@@ -167,6 +173,27 @@ class _RawScreenState extends State<RawScreen> {
     });
   }
 
+  Future<void> _editColors() async {
+    final recent = [
+      for (var i = _lines.length - 1; i >= 0 && _lines.length - i <= 60; i--) _lines[i], // newest first
+    ];
+    final made = await Navigator.push<RawColorScheme>(
+        context, MaterialPageRoute(builder: (_) => RawColorEditor(recentLines: recent, current: scheme)));
+    if (made == null || !mounted) return;
+    setState(() => scheme = made);
+    await made.save();
+  }
+
+  void _setColorsOn(bool on) {
+    final current = scheme;
+    if (current == null) {
+      _editColors(); // nothing saved yet: make one
+      return;
+    }
+    setState(() => current.enabled = on);
+    current.save();
+  }
+
   void _clear() {
     setState(() {
       _lines.clear();
@@ -217,11 +244,22 @@ class _RawScreenState extends State<RawScreen> {
                 },
               ),
             ]),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Checkbox(value: scheme?.enabled ?? false, onChanged: (v) => _setColorsOn(v ?? false)),
+              const Text('Colors'),
+              IconButton(tooltip: 'Make or change the colors', icon: const Icon(Icons.palette_outlined), onPressed: _editColors),
+            ]),
             IconButton(tooltip: 'Clear the text', icon: const Icon(Icons.delete_outline), onPressed: _clear),
           ],
         ),
       ),
     );
+  }
+
+  /// One line, in the saved colors if they're on and the line has the right number of fields.
+  Widget _lineWidget(String line) {
+    final span = scheme?.span(line, _textStyle.copyWith(color: Colors.black));
+    return span == null ? Text(line, style: _textStyle, softWrap: false) : Text.rich(span, softWrap: false);
   }
 
   /// The lines. Dragging sideways moves all of them together, so the scroll bar stays at the right edge.
@@ -256,7 +294,7 @@ class _RawScreenState extends State<RawScreen> {
                         alignment: Alignment.centerLeft,
                         minWidth: 0,
                         maxWidth: double.infinity,
-                        child: Text(_lineAt(i), style: _textStyle, softWrap: false),
+                        child: _lineWidget(_lineAt(i)),
                       ),
                     ),
                   ),

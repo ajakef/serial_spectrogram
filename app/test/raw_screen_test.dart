@@ -40,12 +40,12 @@ void main() {
     // dragging the text down (toward older lines) turns autoscroll off, and new lines don't move the view
     await tester.drag(find.byType(ListView), const Offset(0, 300));
     await tester.pump();
-    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, false);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).first).value, false);
     aspen.success(Uint8List.fromList(utf8.encode('newest\n')));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump();
     expect(find.text('newest'), findsNothing);
-    await tester.tap(find.byType(Checkbox)); // back on: jumps to the end
+    await tester.tap(find.byType(Checkbox).first); // back on: jumps to the end
     await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
