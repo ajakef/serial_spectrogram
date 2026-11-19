@@ -63,6 +63,19 @@ It is a [Flutter](https://flutter.dev) app (Dart code) with a small amount of Ko
 **Setup:** install Flutter and Android Studio (for the Android SDK), then run `flutter doctor` in this folder.
 On the phone, turn on Developer options and USB debugging.
 
+**On villarrica** (the current main computer) nothing is installed system-wide, so `flutter` is not on the PATH.
+The tools live in `~/Work/.dev-tools/` (outside this repository): `flutter/`, `android-sdk/`, `jdk/jdk-17.0.21+9/`,
+and a wrapper script `fl` that runs Flutter with its settings and package cache kept there (Claude's sandbox
+can't write to `~`). In the commands below, type `~/Work/.dev-tools/fl` where it says `flutter`. Before building
+an APK, also set:
+
+    export JAVA_HOME=~/Work/.dev-tools/jdk/jdk-17.0.21+9
+    export ANDROID_HOME=~/Work/.dev-tools/android-sdk ANDROID_SDK_ROOT=~/Work/.dev-tools/android-sdk
+
+The first APK build downloads a lot and takes over 10 minutes. `build_release.sh` calls plain `flutter` and looks
+for `apksigner` in `~/Android/Sdk` (the old computer's location), so it needs `flutter` on the PATH and that path
+changed to the `.dev-tools` SDK before it works here.
+
 **Everyday commands** (run in this folder):
 - `flutter run --release`: build and install on the connected phone. (`flutter install` alone does *not* rebuild.)
 - `flutter test`: run the tests. Add `--update-goldens` to redraw the test pictures in `test/goldens/`.
