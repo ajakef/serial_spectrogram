@@ -18,28 +18,63 @@ class RawColorEditor extends StatefulWidget {
 class _RawColorEditorState extends State<RawColorEditor> {
   static const _mono = TextStyle(fontFamily: 'monospace', fontSize: 12);
 
-  late final List<String> lines; // lines with at least one delimiter
   late List<FieldStyle> styles;
+  late Delimiter delimiter;
+  final _custom = TextEditingController();
+  bool useCustom = false;
   int selected = 0;
+
+  /// Recent lines that contain the delimiter at least once.
+  List<String> get lines => [for (final l in widget.recentLines) if (delimiter.appearsIn(l)) l];
 
   @override
   void initState() {
     super.initState();
-    lines = [for (final l in widget.recentLines) if (l.contains(RawColorScheme.delimiter)) l];
     styles = [...?widget.current?.styles];
+    delimiter = widget.current?.delimiter ?? _bestGuess();
+    if (!Delimiter.presets.contains(delimiter)) {
+      useCustom = true;
+      _custom.text = delimiter.text;
+    }
     // Start from a recent line that fits the saved scheme; otherwise the newest line.
     final fit = widget.current == null ? -1 : lines.indexWhere((l) => widget.current!.split(l) != null);
     selected = fit < 0 ? 0 : fit;
     if (lines.isNotEmpty) _resize();
   }
 
-  List<String> get fields => lines.isEmpty ? const [] : lines[selected].split(RawColorScheme.delimiter);
+  @override
+  void dispose() {
+    _custom.dispose();
+    super.dispose();
+  }
+
+  /// With nothing saved: the first of comma, comma and space, tab, or spaces that the newest line has.
+  Delimiter _bestGuess() {
+    for (final d in [Delimiter.commaSpace, Delimiter.comma, Delimiter.tab, Delimiter.spaces]) {
+      if (widget.recentLines.any(d.appearsIn)) return d;
+    }
+    return Delimiter.comma;
+  }
+
+  List<String> get fields {
+    final l = lines;
+    return l.isEmpty ? const [] : delimiter.split(l[selected.clamp(0, l.length - 1)]).fields;
+  }
+
+  void _setDelimiter(Delimiter d) => setState(() {
+        delimiter = d;
+        selected = 0;
+        _resize();
+      });
 
   /// One style per field of the chosen example line: kept for fields that were already styled, plain for new ones.
   void _resize() {
     final n = fields.length;
     styles = [for (var i = 0; i < n; i++) i < styles.length ? styles[i] : const FieldStyle()];
   }
+
+  /// The menu's value: a preset, or null for "Other".
+  Delimiter? get _menuValue => useCustom ? null : delimiter;
 
   void _pick(int i) => setState(() {
         selected = i;
@@ -108,36 +143,67 @@ class _RawColorEditorState extends State<RawColorEditor> {
 
   /// A line as it will look with the colors chosen so far (plain if it has a different number of fields).
   Widget _preview(String line) {
-    final span = RawColorScheme(styles: styles).span(line, _mono.copyWith(color: Colors.black));
+    final span = RawColorScheme(styles: styles, delimiter: delimiter).span(line, _mono.copyWith(color: Colors.black));
     return Text.rich(span ?? TextSpan(text: line, style: _mono), softWrap: false, overflow: TextOverflow.ellipsis);
   }
 
   @override
   Widget build(BuildContext context) {
     final f = fields;
+    final lines = this.lines;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Colors for lines'),
         actions: [
           TextButton(
-            onPressed: lines.isEmpty ? null : () => Navigator.pop(context, RawColorScheme(styles: [...styles])),
+            onPressed: lines.isEmpty || fields.isEmpty ? null : () => Navigator.pop(context, RawColorScheme(styles: [...styles], delimiter: delimiter)),
             child: const Text('Save'),
           ),
         ],
       ),
-      body: lines.isEmpty
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('No recent lines with commas yet. Plug in the logger, let some data arrive on the Raw tab, '
-                    'then open this again.'),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          const Text('What separates the fields?', style: TextStyle(fontWeight: FontWeight.bold)),
+          Row(children: [
+            DropdownButton<Delimiter?>(
+              value: _menuValue,
+              items: [
+                for (final d in Delimiter.presets) DropdownMenuItem(value: d, child: Text(d.label)),
+                const DropdownMenuItem(value: null, child: Text('Other...')),
+              ],
+              onChanged: (d) {
+                if (d == null) {
+                  setState(() => useCustom = true);
+                  if (_custom.text.isNotEmpty) _setDelimiter(Delimiter(_custom.text));
+                } else {
+                  setState(() => useCustom = false);
+                  _setDelimiter(d);
+                }
+              },
+            ),
+            if (useCustom)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: TextField(
+                    controller: _custom,
+                    decoration: const InputDecoration(hintText: 'type it here', isDense: true),
+                    onChanged: (t) => _setDelimiter(Delimiter(t)),
+                  ),
+                ),
               ),
+          ]),
+          const SizedBox(height: 8),
+          if (lines.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('No recent lines contain that separator. Plug in the logger, let some data arrive on the Raw '
+                  'tab, or choose another separator.'),
             )
-          : ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
+          else ...[
                 Text(
-                  'Colors are used only for lines with exactly ${f.length} fields (${f.length - 1} commas), '
+                  'Colors are used only for lines with exactly ${f.length} fields (${f.length - 1} separators), '
                   'like the line you pick here. Other lines stay plain.',
                 ),
                 const SizedBox(height: 12),
@@ -189,8 +255,9 @@ class _RawColorEditorState extends State<RawColorEditor> {
                 ),
                 const SizedBox(height: 4),
                 const Text('3. Tap Save (top right). Turn the colors on and off with the Colors box on the Raw tab.'),
-              ],
-            ),
+          ],
+        ],
+      ),
     );
   }
 }

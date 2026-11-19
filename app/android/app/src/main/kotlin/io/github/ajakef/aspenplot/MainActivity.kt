@@ -41,6 +41,10 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
     private val pickRequest = 1
     private val maxPickBytes = 2 * 1024 * 1024
 
+    // Opening the port normally asserts DTR and RTS, which restarts the logger (like Python's pyserial). The Raw tab asks
+    // for "connect" without that, so looking at a running logger doesn't restart it. Used up by the next connection.
+    private var resetOnConnect = true
+
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -63,7 +67,11 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MethodChannel(messenger, "aspen/serial").setMethodCallHandler { call, result ->
             when (call.method) {
-                "connect" -> { connect(); result.success(null) }
+                "connect" -> {
+                    resetOnConnect = (call.arguments as? Boolean) ?: true
+                    connect()
+                    result.success(null)
+                }
                 "write" -> {
                     try {
                         port?.write(call.arguments as ByteArray, 1000)
@@ -221,9 +229,12 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
             val p = driver.ports[0]
             p.open(connection)
             p.setParameters(baudRate, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
-            // Python's pyserial turns these on when opening a port; match it.
-            p.dtr = true
-            p.rts = true
+            if (resetOnConnect) {
+                // Python's pyserial turns these on when opening a port; match it.
+                p.dtr = true
+                p.rts = true
+            }
+            resetOnConnect = true
             port = p
             ioManager = SerialInputOutputManager(p, this).also { it.start() }
             sendStatus("connected")

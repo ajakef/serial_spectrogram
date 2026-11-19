@@ -30,44 +30,108 @@ class FieldStyle {
       );
 }
 
-/// A saved coloring of the Raw tab's lines: one [FieldStyle] per field. It applies only to lines that have exactly
-/// that many fields when split at commas (so other kinds of lines, such as startup messages, are left alone).
-class RawColorScheme {
-  RawColorScheme({required this.styles, this.enabled = true});
+/// What separates the fields of a line: [text], or runs of it counting as one separator if [collapse] is set.
+class Delimiter {
+  const Delimiter(this.text, {this.collapse = false});
 
-  static const delimiter = ',';
+  final String text;
+  final bool collapse;
+
+  static const comma = Delimiter(',');
+  static const commaSpace = Delimiter(', ');
+  static const space = Delimiter(' ');
+  static const spaces = Delimiter(' ', collapse: true);
+  static const tab = Delimiter('\t');
+  static const semicolon = Delimiter(';');
+
+  /// The ones offered in the editor's menu (besides "Other").
+  static const presets = [comma, commaSpace, space, spaces, tab, semicolon];
+
+  RegExp get pattern => RegExp('(?:${RegExp.escape(text)})${collapse ? '+' : ''}');
+
+  /// The line cut into fields, and the separators between them (one fewer than the fields).
+  ({List<String> fields, List<String> separators}) split(String line) {
+    final fields = <String>[];
+    final separators = <String>[];
+    var start = 0;
+    if (text.isNotEmpty) {
+      for (final m in pattern.allMatches(line)) {
+        if (m.end == m.start) continue;
+        fields.add(line.substring(start, m.start));
+        separators.add(m.group(0)!);
+        start = m.end;
+      }
+    }
+    fields.add(line.substring(start));
+    return (fields: fields, separators: separators);
+  }
+
+  bool appearsIn(String line) => text.isNotEmpty && pattern.hasMatch(line);
+
+  String get label {
+    if (this == spaces) return 'Spaces (several in a row count as one)';
+    final shown = text.replaceAll('\t', 'Tab').replaceAll(' ', '␣');
+    return switch (text) {
+      ',' => 'Comma ,',
+      ', ' => 'Comma and space ,␣',
+      ' ' => 'Space ␣ (each one separates)',
+      '\t' => 'Tab',
+      ';' => 'Semicolon ;',
+      _ => 'Other: $shown',
+    };
+  }
+
+  @override
+  bool operator ==(Object other) => other is Delimiter && other.text == text && other.collapse == collapse;
+
+  @override
+  int get hashCode => Object.hash(text, collapse);
+}
+
+/// A saved coloring of the Raw tab's lines: one [FieldStyle] per field. It applies only to lines that have exactly
+/// that many fields when split at its delimiter (so other kinds of lines, such as startup messages, are left alone).
+class RawColorScheme {
+  RawColorScheme({required this.styles, this.delimiter = Delimiter.comma, this.enabled = true});
 
   final List<FieldStyle> styles;
+  final Delimiter delimiter;
   bool enabled;
 
   int get fields => styles.length;
 
   /// The line's fields, or null if it doesn't have the number of fields this scheme was made for.
   List<String>? split(String line) {
-    final parts = line.split(delimiter);
+    final parts = delimiter.split(line).fields;
     return parts.length == fields ? parts : null;
   }
 
   /// The line drawn in color, or null if the scheme doesn't apply to it (or is off).
   TextSpan? span(String line, TextStyle base) {
     if (!enabled) return null;
-    final parts = split(line);
-    if (parts == null) return null;
+    final cut = delimiter.split(line);
+    if (cut.fields.length != fields) return null;
     return TextSpan(style: base, children: [
-      for (var i = 0; i < parts.length; i++) ...[
-        if (i > 0) const TextSpan(text: delimiter),
-        TextSpan(text: parts[i], style: styles[i].textStyle),
+      for (var i = 0; i < fields; i++) ...[
+        if (i > 0) TextSpan(text: cut.separators[i - 1]),
+        TextSpan(text: cut.fields[i], style: styles[i].textStyle),
       ],
     ]);
   }
 
-  Map<String, Object?> toJson() => {'enabled': enabled, 'fields': [for (final s in styles) s.toJson()]};
+  Map<String, Object?> toJson() => {
+        'enabled': enabled,
+        'delimiter': delimiter.text,
+        'collapse': delimiter.collapse,
+        'fields': [for (final s in styles) s.toJson()],
+      };
 
   static RawColorScheme? fromJson(Object? j) {
     if (j is! Map || j['fields'] is! List) return null;
     final styles = [for (final f in j['fields'] as List) FieldStyle.fromJson(f as Map)];
     if (styles.isEmpty) return null;
-    return RawColorScheme(styles: styles, enabled: j['enabled'] != false);
+    final text = j['delimiter'];
+    final delimiter = text is String && text.isNotEmpty ? Delimiter(text, collapse: j['collapse'] == true) : Delimiter.comma;
+    return RawColorScheme(styles: styles, delimiter: delimiter, enabled: j['enabled'] != false);
   }
 
   /// The scheme saved on this phone, or null if there isn't one (or the file is unreadable).

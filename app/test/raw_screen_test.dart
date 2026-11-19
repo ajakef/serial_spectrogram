@@ -125,4 +125,36 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('Raw tab: Connect does not restart the logger; the restart button does', (tester) async {
+    final messenger = tester.binding.defaultBinaryMessenger;
+    late MockStreamHandlerEventSink aspen;
+    final calls = <String>[];
+    messenger.setMockMethodCallHandler(const MethodChannel('aspen/serial'), (call) async {
+      calls.add('${call.method} ${call.arguments}');
+      return null;
+    });
+    messenger.setMockStreamHandler(
+        const EventChannel('aspen/serial/events'), MockStreamHandler.inline(onListen: (_, sink) {
+      aspen = sink;
+    }));
+    final link = SerialLink()..start();
+    await tester.pumpWidget(MaterialApp(home: RawScreen(link: link)));
+    aspen.success('disconnected');
+    await tester.pump();
+    calls.clear();
+    await tester.tap(find.text('Connect'));
+    await tester.pump();
+    expect(calls, ['connect false']); // no reset requested, and no RTS toggling
+    expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.restart_alt)).onPressed, isNull); // not connected
+
+    aspen.success('connected');
+    await tester.pump();
+    calls.clear();
+    await tester.tap(find.byIcon(Icons.restart_alt));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(calls, ['setRts false', 'setRts true']);
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

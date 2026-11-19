@@ -21,6 +21,31 @@ Future<void> realIo(WidgetTester tester) async {
 }
 
 void main() {
+  test('delimiters: comma, comma and space, space, runs of spaces, tab, and custom', () {
+    List<String> f(Delimiter d, String line) => d.split(line).fields;
+    expect(f(Delimiter.comma, 'a,b, c,d'), ['a', 'b', ' c', 'd']);
+    expect(f(Delimiter.commaSpace, 'a, b, c,d'), ['a', 'b', 'c,d']);
+    expect(f(Delimiter.space, 'a b  c'), ['a', 'b', '', 'c']);
+    expect(f(Delimiter.spaces, 'a b   c'), ['a', 'b', 'c']);
+    expect(f(Delimiter.tab, 'a\tb\t1.5'), ['a', 'b', '1.5']);
+    expect(f(const Delimiter('|'), 'a|b'), ['a', 'b']); // custom text with a special character in a regex
+    expect(f(const Delimiter(''), 'a,b'), ['a,b']); // an empty custom separator splits nothing
+    expect(Delimiter.spaces.split('a  b  c').separators, ['  ', '  ']);
+    expect(Delimiter.tab.appearsIn('x\ty'), true);
+    expect(Delimiter.tab.appearsIn('x y'), false);
+
+    // a scheme remembers its delimiter, and colors only lines with the right number of fields for it
+    final scheme = RawColorScheme(
+        styles: [const FieldStyle(text: _red), const FieldStyle(), const FieldStyle()], delimiter: Delimiter.spaces);
+    expect(scheme.span('1   2 3', const TextStyle())!.toPlainText(), '1   2 3'); // spacing kept
+    expect(scheme.span('1,2,3', const TextStyle()), isNull);
+    expect(scheme.span('1 2', const TextStyle()), isNull);
+    final again = RawColorScheme.fromJson(jsonDecode(jsonEncode(scheme.toJson())))!;
+    expect(again.delimiter, Delimiter.spaces);
+    // a scheme saved before delimiters existed was comma-separated
+    expect(RawColorScheme.fromJson({'fields': [{}, {}]})!.delimiter, Delimiter.comma);
+  });
+
   test('a scheme applies only to lines with the same number of fields, and survives saving', () {
     final scheme = RawColorScheme(styles: [
       const FieldStyle(text: _red),

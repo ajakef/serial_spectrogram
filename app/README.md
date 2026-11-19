@@ -53,9 +53,9 @@ latest health line, and the whole startup log. The circular-arrow button restart
 
 **Raw tab:** shows every character received, including a last line that hasn't ended yet. The last 3000 lines are kept.
 Long lines can be dragged sideways (a thin bar at the bottom shows where you are). Dragging the text toward older lines turns autoscroll off; tick the box to jump back to the end. The baud rate goes
-back to the logger's 500,000 when you leave the tab. Nothing is sent to the logger from this tab.
+back to the logger's 500,000 when you leave the tab. Nothing is sent to the logger from this tab, and tapping Connect there does not restart the logger (on the other tabs it does). The restart button (circular arrow) restarts it on request.
 
-**Raw tab colors:** the palette button opens a screen listing recent lines that contain commas. Tap one as the example,
+**Raw tab colors:** the palette button opens a screen listing recent lines that contain the separator you choose (comma, comma and space, space, several spaces, tab, semicolon, or your own text). Tap one as the example,
 then tap each field to give it a text color and/or a highlight color, then Save. The scheme is saved on the phone and
 used only for lines with exactly as many fields as the example (so startup messages and other kinds of lines stay plain).
 The **Colors** box turns it on and off. A line still arriving can show the wrong colors until it is complete.

@@ -80,7 +80,9 @@ class SerialLink implements SvlPort {
     _methods.invokeMethod('connect');
   }
 
-  void connect() => _methods.invokeMethod('connect');
+  /// Opens the USB connection. With [reset] false the logger is not restarted by connecting (the control lines are left
+  /// alone); use [restartLogger] to restart it.
+  void connect({bool reset = true}) => _methods.invokeMethod('connect', reset);
 
   /// Restarts the logger the way connecting does: RTS released, then asserted (the Aspen restarts when
   /// RTS is asserted), leaving it asserted as after connecting.

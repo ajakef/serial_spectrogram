@@ -194,6 +194,9 @@ class _RawScreenState extends State<RawScreen> {
     current.save();
   }
 
+  /// The only way the Raw tab restarts the logger (connecting doesn't).
+  Future<void> _restart() => link.restartLogger();
+
   void _clear() {
     setState(() {
       _lines.clear();
@@ -249,6 +252,11 @@ class _RawScreenState extends State<RawScreen> {
               const Text('Colors'),
               IconButton(tooltip: 'Make or change the colors', icon: const Icon(Icons.palette_outlined), onPressed: _editColors),
             ]),
+            IconButton(
+              tooltip: 'Restart the logger',
+              icon: const Icon(Icons.restart_alt),
+              onPressed: status == 'connected' ? _restart : null,
+            ),
             IconButton(tooltip: 'Clear the text', icon: const Icon(Icons.delete_outline), onPressed: _clear),
           ],
         ),
@@ -331,7 +339,7 @@ class _RawScreenState extends State<RawScreen> {
                 padding: const EdgeInsets.only(left: 12),
                 child: Row(children: [
                   Expanded(child: Text(status == 'disconnected' || status == 'no device' ? 'Not connected' : status)),
-                  TextButton(onPressed: link.connect, child: const Text('Connect')),
+                  TextButton(onPressed: () => link.connect(reset: false), child: const Text('Connect')),
                 ]),
               ),
             Expanded(child: _text(count)),
