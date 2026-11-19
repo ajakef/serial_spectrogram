@@ -42,7 +42,7 @@ void main() {
     expect(find.textContaining('Waiting'), findsNothing);
     expect(tester.getSize(find.byType(PlotPanels)), full); // didn't shrink when the card went away
     // sideways, the tabs are down the left edge; the plots get the rest of the width
-    final tabs = tester.getSize(find.byType(NavigationRail)).width + 1; // + the divider
+    final tabs = tester.getSize(find.byKey(const Key('side-tabs'))).width + 1; // + the divider
     expect(full.width, screen.width - tabs);
 
     // heights: spectrograms a quarter each, traces half

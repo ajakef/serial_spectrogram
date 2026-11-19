@@ -52,7 +52,7 @@ latest health line, and the whole startup log. The circular-arrow button restart
   service can be read or sent later (Share menu: email, Quick Share, Drive...).
 
 **Raw tab:** shows every character received, including a last line that hasn't ended yet. The last 3000 lines are kept.
-Dragging the text toward older lines turns autoscroll off; tick the box to jump back to the end. The baud rate goes
+Long lines can be dragged sideways (a thin bar at the bottom shows where you are). Dragging the text toward older lines turns autoscroll off; tick the box to jump back to the end. The baud rate goes
 back to the logger's 500,000 when you leave the tab. Nothing is sent to the logger from this tab.
 
 **Sites tab:** **New site** (with the logger plugged in and checked, its serial number and codes are filled in),

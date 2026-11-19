@@ -29,12 +29,23 @@ class RawScreen extends StatefulWidget {
 class _RawScreenState extends State<RawScreen> {
   static const _lineHeight = 16.0;
   static const _textStyle = TextStyle(fontFamily: 'monospace', fontSize: 12, height: 16 / 12);
+  static const _margin = 8.0;
+
+  /// Width of one character (the font is monospaced).
+  static final double _charWidth = (TextPainter(
+    text: const TextSpan(text: '0000000000', style: _textStyle),
+    textDirection: TextDirection.ltr,
+  )..layout())
+          .width /
+      10;
 
   final _scroll = ScrollController();
   final _lines = <String>[];
   final _partial = <int>[]; // bytes of the line still being received
   final _decoder = const Utf8Decoder(allowMalformed: true);
   bool _dirty = false;
+  int _maxChars = 0; // longest line seen (until Clear), for how far the text can be dragged sideways
+  double _sideways = 0; // how far the text is dragged to the left
   int _dropped = 0; // lines removed from the top since the last redraw
   bool autoscroll = true;
   RawOrientation orientation = RawOrientation.auto;
@@ -90,6 +101,7 @@ class _RawScreenState extends State<RawScreen> {
         }
       }
     }
+    if (_partial.length > _maxChars) _maxChars = _partial.length;
     final extra = _lines.length - RawScreen.maxLines;
     if (extra > 0) {
       _lines.removeRange(0, extra);
@@ -98,11 +110,15 @@ class _RawScreenState extends State<RawScreen> {
     _dirty = true;
   }
 
-  String _decode(List<int> bytes) => _decoder.convert(bytes);
+  String _decode(List<int> bytes) {
+    final line = _decoder.convert(bytes);
+    if (line.length > _maxChars) _maxChars = line.length;
+    return line;
+  }
 
   int get _count => _lines.length + (_partial.isEmpty ? 0 : 1);
 
-  String _lineAt(int i) => i < _lines.length ? _lines[i] : _decode(_partial);
+  String _lineAt(int i) => i < _lines.length ? _lines[i] : _decoder.convert(_partial);
 
   void _afterBuild() {
     final dropped = _dropped;
@@ -155,6 +171,8 @@ class _RawScreenState extends State<RawScreen> {
     setState(() {
       _lines.clear();
       _partial.clear();
+      _maxChars = 0;
+      _sideways = 0;
       _dirty = false;
     });
   }
@@ -206,6 +224,59 @@ class _RawScreenState extends State<RawScreen> {
     );
   }
 
+  /// The lines. Dragging sideways moves all of them together, so the scroll bar stays at the right edge.
+  Widget _text(int count) {
+    return LayoutBuilder(builder: (context, box) {
+      final contentWidth = _maxChars * _charWidth + 2 * _margin;
+      final room = (contentWidth - box.maxWidth).clamp(0.0, double.infinity); // how far the text can move
+      if (_sideways > room) _sideways = room;
+      return GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: (d) => setState(() => _sideways = (_sideways - d.delta.dx).clamp(0.0, room)),
+        child: Stack(
+          children: [
+            NotificationListener<ScrollUpdateNotification>(
+              onNotification: (n) {
+                // Dragging the text away from the bottom stops autoscrolling (tick the box to resume).
+                if (autoscroll && n.dragDetails != null && n.metrics.extentAfter > _lineHeight) {
+                  setState(() => autoscroll = false);
+                }
+                return false;
+              },
+              child: Scrollbar(
+                controller: _scroll,
+                child: ClipRect(
+                  child: ListView.builder(
+                    controller: _scroll,
+                    itemExtent: _lineHeight,
+                    itemCount: count,
+                    itemBuilder: (_, i) => Transform.translate(
+                      offset: Offset(_margin - _sideways, 0),
+                      child: OverflowBox(
+                        alignment: Alignment.centerLeft,
+                        minWidth: 0,
+                        maxWidth: double.infinity,
+                        child: Text(_lineAt(i), style: _textStyle, softWrap: false),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (room > 0) // where the window is within the longest line
+              Positioned(
+                left: box.maxWidth * _sideways / contentWidth,
+                bottom: 0,
+                width: box.maxWidth * box.maxWidth / contentWidth,
+                height: 3,
+                child: const IgnorePointer(child: ColoredBox(color: Colors.black38)),
+              ),
+          ],
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final count = _count;
@@ -225,27 +296,7 @@ class _RawScreenState extends State<RawScreen> {
                   TextButton(onPressed: link.connect, child: const Text('Connect')),
                 ]),
               ),
-            Expanded(
-              child: NotificationListener<ScrollUpdateNotification>(
-                onNotification: (n) {
-                  // Dragging the text away from the bottom stops autoscrolling (tick the box to resume).
-                  if (autoscroll && n.dragDetails != null && n.metrics.extentAfter > _lineHeight) {
-                    setState(() => autoscroll = false);
-                  }
-                  return false;
-                },
-                child: Scrollbar(
-                  controller: _scroll,
-                  child: ListView.builder(
-                    controller: _scroll,
-                    itemExtent: _lineHeight,
-                    itemCount: count,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    itemBuilder: (_, i) => Text(_lineAt(i), style: _textStyle, softWrap: false, overflow: TextOverflow.clip),
-                  ),
-                ),
-              ),
-            ),
+            Expanded(child: _text(count)),
           ],
         ),
       ),

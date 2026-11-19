@@ -30,6 +30,8 @@ class _HomeScreenState extends State<HomeScreen> {
   late final check = CheckSession(link);
   final sites = SiteStore();
   late int tab = widget.initialTab;
+  // One key per tab, so a tab keeps its state (text, plots, settings) when turning the phone swaps the layout below.
+  final _bodyKeys = [for (var i = 0; i < 4; i++) GlobalKey()];
 
   static const _destinations = [
     (icon: Icons.show_chart, label: 'Plot'),
@@ -65,12 +67,56 @@ class _HomeScreenState extends State<HomeScreen> {
     unawaited(link.setPlotMode(i == HomeScreen.plotTab));
   }
 
-  Widget _body() => switch (tab) {
-        HomeScreen.plotTab => PlotScreen(link: link),
-        HomeScreen.checkTab => CheckScreen(session: check),
-        HomeScreen.rawTab => RawScreen(link: link),
-        _ => SitesScreen(store: sites, check: check),
-      };
+  Widget _body() => KeyedSubtree(
+        key: _bodyKeys[tab],
+        child: switch (tab) {
+          HomeScreen.plotTab => PlotScreen(link: link),
+          HomeScreen.checkTab => CheckScreen(session: check),
+          HomeScreen.rawTab => RawScreen(link: link),
+          _ => SitesScreen(store: sites, check: check),
+        },
+      );
+
+  /// The tabs down the left edge when the phone is sideways: as narrow as the labels allow, to leave room for the content.
+  Widget _sideTabs() {
+    final primary = Theme.of(context).colorScheme.primary;
+    return SizedBox(
+      key: const Key('side-tabs'),
+      width: 46,
+      child: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < _destinations.length; i++)
+                InkWell(
+                  onTap: () => _select(i),
+                  child: Container(
+                    width: 46,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    color: i == tab ? primary.withValues(alpha: 0.12) : null,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_destinations[i].icon, size: 22, color: i == tab ? primary : Colors.black54),
+                        Text(
+                          _destinations[i].label,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: i == tab ? FontWeight.bold : FontWeight.normal,
+                            color: i == tab ? primary : Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,18 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return Scaffold(
         body: Row(
           children: [
-            SafeArea(
-              right: false,
-              child: NavigationRail(
-                selectedIndex: tab,
-                onDestinationSelected: _select,
-                labelType: NavigationRailLabelType.all,
-                minWidth: 56,
-                destinations: [
-                  for (final d in _destinations) NavigationRailDestination(icon: Icon(d.icon), label: Text(d.label)),
-                ],
-              ),
-            ),
+            SafeArea(right: false, child: _sideTabs()),
             const VerticalDivider(width: 1),
             Expanded(child: _body()),
           ],
