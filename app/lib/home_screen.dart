@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'check_screen.dart';
 import 'check_session.dart';
 import 'main.dart';
+import 'raw_screen.dart';
 import 'serial_link.dart';
 import 'sites/site_store.dart';
 import 'sites/sites_screen.dart';
@@ -17,6 +18,7 @@ class HomeScreen extends StatefulWidget {
 
   static const plotTab = 0;
   static const checkTab = 1;
+  static const rawTab = 3;
   final int initialTab;
 
   @override
@@ -33,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
     (icon: Icons.show_chart, label: 'Plot'),
     (icon: Icons.fact_check_outlined, label: 'Check'),
     (icon: Icons.place_outlined, label: 'Sites'),
+    (icon: Icons.terminal, label: 'Raw'),
   ];
 
   @override
@@ -51,8 +54,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _select(int i) {
+  Future<void> _select(int i) async {
     if (i == tab) return;
+    // Leaving the Raw tab: the port goes back to the logger's baud rate before anything restarts the logger.
+    if (tab == HomeScreen.rawTab && link.baud != SerialLink.normalBaud && link.currentStatus == 'connected') {
+      await link.setBaud(SerialLink.normalBaud);
+    }
+    if (!mounted) return;
     setState(() => tab = i);
     unawaited(link.setPlotMode(i == HomeScreen.plotTab));
   }
@@ -60,6 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _body() => switch (tab) {
         HomeScreen.plotTab => PlotScreen(link: link),
         HomeScreen.checkTab => CheckScreen(session: check),
+        HomeScreen.rawTab => RawScreen(link: link),
         _ => SitesScreen(store: sites, check: check),
       };
 

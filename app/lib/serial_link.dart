@@ -14,6 +14,7 @@ class SerialLink implements SvlPort {
 
   final _lines = StreamController<String>.broadcast();
   final _status = StreamController<String>.broadcast();
+  final _bytes = StreamController<Uint8List>.broadcast();
   final List<int> _buffer = [];
   StreamSubscription? _sub;
 
@@ -52,6 +53,13 @@ class SerialLink implements SvlPort {
   /// Each complete line from the logger, without the trailing \r\n.
   Stream<String> get lines => _lines.stream;
 
+  /// Every chunk of bytes from the logger, exactly as received (used by the Raw tab).
+  Stream<Uint8List> get bytes => _bytes.stream;
+
+  /// Baud rate the port is set to. The logger runs at [normalBaud]; the Raw tab can change it to read other devices.
+  static const normalBaud = 500000;
+  int baud = normalBaud;
+
   /// Connection status: "connected", "disconnected", "no device", "asking permission", "error: ...".
   Stream<String> get status => _status.stream;
 
@@ -61,7 +69,10 @@ class SerialLink implements SvlPort {
         _addBytes(event);
       } else if (event is String) {
         if (event == 'disconnected') _buffer.clear();
-        if (event == 'connected') _startup.reset();
+        if (event == 'connected') {
+          baud = normalBaud; // a new connection always opens at the logger's rate
+          _startup.reset();
+        }
         currentStatus = event;
         _status.add(event);
       }
@@ -94,7 +105,11 @@ class SerialLink implements SvlPort {
   }
 
   @override
-  Future<void> setBaud(int baud) => _methods.invokeMethod('setBaud', baud);
+  Future<void> setBaud(int baud) async {
+    await _methods.invokeMethod('setBaud', baud);
+    this.baud = baud;
+    _buffer.clear();
+  }
 
   @override
   Future<void> setRts(bool asserted) => _methods.invokeMethod('setRts', asserted);
@@ -129,12 +144,14 @@ class SerialLink implements SvlPort {
   }
 
   void _addBytes(Uint8List bytes) {
+    _bytes.add(bytes);
     if (rawMode) {
       _raw.addAll(bytes);
       _rawArrived?.complete();
       _rawArrived = null;
       return;
     }
+    if (baud != normalBaud) return; // the Raw tab is reading something else: not the logger's lines
     for (final b in bytes) {
       if (b == 0x0A) { // newline
         final line = utf8.decode(_buffer, allowMalformed: true).trim();

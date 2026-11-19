@@ -1,10 +1,12 @@
 # Aspen Plot (Android app)
 
-Three tabs (along the bottom; down the left side when the phone is sideways):
+Four tabs (along the bottom; down the left side when the phone is sideways):
 - **Check**: plug in a logger and see whether it started properly: a checklist for the field tech, the full startup
   report for an engineer, CONFIG.TXT checked line by line, and a form to fix it. Each check is saved on the phone.
 - **Plot**: live waveforms and spectrograms.
 - **Sites**: waypoints, codes, photos with markers on hidden sensors, notes, and navigation back to a site.
+- **Raw**: the text the logger sends, as it arrives (a simple serial monitor), with a baud-rate menu (for other serial devices),
+  scrolling, autoscroll on/off, a clear button, and a rotation lock (portrait, landscape, or follow the phone).
 
 The Plot tab plots live waveforms and spectrograms from an Aspen geophysical data logger on an Android phone.
 It does what `serial_spectrogram.py` in the folder above does, with the same processing and the same layout:
@@ -48,6 +50,10 @@ latest health line, and the whole startup log. The circular-arrow button restart
   Aspen firmware 1.0.0-2 or newer (older firmware says so and nothing changes).
 - **Saved startup logs** (folder button): every check is saved on the phone, so a log from a site without cell
   service can be read or sent later (Share menu: email, Quick Share, Drive...).
+
+**Raw tab:** shows every character received, including a last line that hasn't ended yet. The last 3000 lines are kept.
+Dragging the text toward older lines turns autoscroll off; tick the box to jump back to the end. The baud rate goes
+back to the logger's 500,000 when you leave the tab. Nothing is sent to the logger from this tab.
 
 **Sites tab:** **New site** (with the logger plugged in and checked, its serial number and codes are filled in),
 then **Take waypoint** while standing at the sensors (it averages 30 s of GPS), then **Add the setup visit**:
@@ -97,6 +103,7 @@ It is a [Flutter](https://flutter.dev) app (Dart code) with a small amount of Ko
 | `lib/home_screen.dart` | The tabs; owns the connection to the logger |
 | `lib/boot_report.dart` | Reads the logger's startup report into the Check tab's checklist (matches the firmware's wording) |
 | `lib/check_session.dart` | Check tab's side of the connection: asks for CONFIG.TXT (GT:), saves settings (GN:/CF:, then SVC), saves logs |
+| `lib/raw_screen.dart` | Raw tab: text monitor, baud menu, autoscroll, rotation lock |
 | `lib/check_screen.dart`, `lib/config_editor.dart`, `lib/saved_logs_screen.dart` | Check tab screens |
 | `lib/config_file.dart` | CONFIG.TXT line checker; the editor's settings and the commands that set them |
 | `lib/sites/` | Sites tab: data (`site_model.dart`), storage, export/import zip (`site_exchange.dart`), GPS and compass math (`geo.dart`), screens |
