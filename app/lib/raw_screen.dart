@@ -220,17 +220,16 @@ class _RawScreenState extends State<RawScreen> {
     return Material(
       elevation: 1,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Wrap(
           crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 12,
+          spacing: 6,
           children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Source '),
               DropdownButton<bool>(
                 value: bluetooth,
                 items: const [
-                  DropdownMenuItem(value: false, child: Text('USB cable')),
+                  DropdownMenuItem(value: false, child: Text('USB')),
                   DropdownMenuItem(value: true, child: Text('Bluetooth')),
                 ],
                 onChanged: (b) {
@@ -256,19 +255,20 @@ class _RawScreenState extends State<RawScreen> {
             ]),
             Row(mainAxisSize: MainAxisSize.min, children: [
               Checkbox(
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 value: autoscroll,
                 onChanged: (v) => setState(() => autoscroll = v ?? true),
               ),
               const Text('Autoscroll'),
             ]),
             Row(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Rotation '),
               DropdownButton<RawOrientation>(
                 value: orientation,
                 items: const [
-                  DropdownMenuItem(value: RawOrientation.auto, child: Text('Follow phone')),
-                  DropdownMenuItem(value: RawOrientation.portrait, child: Text('Portrait')),
-                  DropdownMenuItem(value: RawOrientation.landscape, child: Text('Landscape')),
+                  DropdownMenuItem(value: RawOrientation.auto, child: Tooltip(message: 'Follow the phone', child: Icon(Icons.screen_rotation))),
+                  DropdownMenuItem(value: RawOrientation.portrait, child: Tooltip(message: 'Portrait', child: Icon(Icons.stay_current_portrait))),
+                  DropdownMenuItem(value: RawOrientation.landscape, child: Tooltip(message: 'Landscape', child: Icon(Icons.stay_current_landscape))),
                 ],
                 onChanged: (o) {
                   if (o != null) _setOrientation(o);
@@ -276,16 +276,19 @@ class _RawScreenState extends State<RawScreen> {
               ),
             ]),
             Row(mainAxisSize: MainAxisSize.min, children: [
-              Checkbox(value: scheme?.enabled ?? false, onChanged: (v) => _setColorsOn(v ?? false)),
+              Checkbox(visualDensity: VisualDensity.compact, materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, value: scheme?.enabled ?? false, onChanged: (v) => _setColorsOn(v ?? false)),
               const Text('Colors'),
-              IconButton(tooltip: 'Make or change the colors', icon: const Icon(Icons.palette_outlined), onPressed: _editColors),
+              IconButton(visualDensity: VisualDensity.compact, padding: const EdgeInsets.all(4), constraints: const BoxConstraints(), tooltip: 'Make or change the colors', icon: const Icon(Icons.palette_outlined), onPressed: _editColors),
             ]),
             if (!bluetooth) IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(),
               tooltip: 'Restart the logger',
               icon: const Icon(Icons.restart_alt),
               onPressed: status == 'connected' ? _restart : null,
             ),
-            IconButton(tooltip: 'Clear the text', icon: const Icon(Icons.delete_outline), onPressed: _clear),
+            IconButton(visualDensity: VisualDensity.compact, padding: const EdgeInsets.all(4), constraints: const BoxConstraints(), tooltip: 'Clear the text', icon: const Icon(Icons.delete_outline), onPressed: _clear),
           ],
         ),
       ),
@@ -367,20 +370,7 @@ class _RawScreenState extends State<RawScreen> {
                 padding: const EdgeInsets.only(left: 12),
                 child: Row(children: [
                   Expanded(child: Text(bleStatus == 'disconnected' ? 'Not connected' : bleStatus)),
-                  TextButton(
-                    onPressed: ble.active ? ble.disconnect : ble.connect,
-                    child: Text(ble.active ? 'Cancel' : 'Connect'),
-                  ),
-                ]),
-              ),
-            if (bluetooth && bleStatus == 'connected')
-              Container(
-                width: double.infinity,
-                color: Colors.blue.shade50,
-                padding: const EdgeInsets.only(left: 12),
-                child: Row(children: [
-                  const Expanded(child: Text('Connected over Bluetooth (view only)')),
-                  TextButton(onPressed: ble.disconnect, child: const Text('Disconnect')),
+                  TextButton(onPressed: ble.active ? null : ble.connect, child: const Text('Connect')),
                 ]),
               ),
             if (!bluetooth && status != 'connected')
