@@ -50,6 +50,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Test builds install beside the real app instead of replacing it.
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
         release {
             signingConfig = if (keystoreProperties.isEmpty) {
                 logger.warn("WARNING: android/key.properties not found; signing with the debug key. Do not share this APK.")

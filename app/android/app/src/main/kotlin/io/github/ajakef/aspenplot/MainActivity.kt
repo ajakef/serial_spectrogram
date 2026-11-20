@@ -36,6 +36,8 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
     private var events: EventChannel.EventSink? = null
     private var port: UsbSerialPort? = null
     private var ioManager: SerialInputOutputManager? = null
+    private var ble: BleSerial? = null
+    private var bleEvents: EventChannel.EventSink? = null
     private var pendingPick: MethodChannel.Result? = null
     private var pickToCache = false // "pickFileToCache": copy the chosen file to the cache instead of sending its bytes
     private val pickRequest = 1
@@ -135,6 +137,20 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
             override fun onCancel(arguments: Any?) { events = null }
         })
 
+        // Bluetooth Low Energy text stream (Raw tab); see BleSerial.kt
+        val bleSerial = BleSerial(this) { bleEvents?.success(it) }.also { ble = it }
+        MethodChannel(messenger, "aspen/ble").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "connect" -> { bleSerial.connect(); result.success(null) }
+                "disconnect" -> { bleSerial.disconnect(); result.success(null) }
+                else -> result.notImplemented()
+            }
+        }
+        EventChannel(messenger, "aspen/ble/events").setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, sink: EventChannel.EventSink) { bleEvents = sink }
+            override fun onCancel(arguments: Any?) { bleEvents = null }
+        })
+
         val filter = IntentFilter(permissionAction).apply { addAction(UsbManager.ACTION_USB_DEVICE_DETACHED) }
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(usbReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -199,7 +215,16 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
         }
     }
 
+    // Answer to the Bluetooth permission dialog (other plugins' requests are passed on).
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == BleSerial.permissionRequest) {
+            ble?.onPermissionResult(grantResults.isNotEmpty() && grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED })
+        }
+    }
+
     override fun onDestroy() {
+        ble?.disconnect()
         disconnect()
         unregisterReceiver(usbReceiver)
         super.onDestroy()

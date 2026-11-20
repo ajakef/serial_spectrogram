@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'ble_link.dart';
 import 'raw_color_editor.dart';
 import 'raw_colors.dart';
 import 'serial_link.dart';
@@ -52,6 +53,9 @@ class _RawScreenState extends State<RawScreen> {
   bool autoscroll = true;
   RawColorScheme? scheme; // saved on the phone; null until one is made
   RawOrientation orientation = RawOrientation.auto;
+  bool bluetooth = false; // reading a logger over Bluetooth instead of the USB cable
+  final ble = BleLink();
+  String bleStatus = 'disconnected';
   late int baud = widget.link.baud;
   String status = '';
   Timer? _timer;
@@ -76,6 +80,10 @@ class _RawScreenState extends State<RawScreen> {
       }
       if (mounted) setState(() => status = s);
     }));
+    _subs.add(ble.bytes.listen(_addBytes));
+    _subs.add(ble.status.listen((s) {
+      if (mounted) setState(() => bleStatus = s);
+    }));
     _timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (_dirty) setState(() {});
     });
@@ -87,6 +95,7 @@ class _RawScreenState extends State<RawScreen> {
     for (final sub in _subs) {
       sub.cancel();
     }
+    ble.dispose();
     _scroll.dispose();
     SystemChrome.setPreferredOrientations([]); // back to turning with the phone
     super.dispose();
@@ -217,6 +226,25 @@ class _RawScreenState extends State<RawScreen> {
           spacing: 12,
           children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
+              const Text('Source '),
+              DropdownButton<bool>(
+                value: bluetooth,
+                items: const [
+                  DropdownMenuItem(value: false, child: Text('USB cable')),
+                  DropdownMenuItem(value: true, child: Text('Bluetooth')),
+                ],
+                onChanged: (b) {
+                  if (b == null || b == bluetooth) return;
+                  setState(() => bluetooth = b);
+                  if (b) {
+                    ble.connect();
+                  } else {
+                    ble.disconnect();
+                  }
+                },
+              ),
+            ]),
+            if (!bluetooth) Row(mainAxisSize: MainAxisSize.min, children: [
               const Text('Baud '),
               DropdownButton<int>(
                 value: baud,
@@ -252,7 +280,7 @@ class _RawScreenState extends State<RawScreen> {
               const Text('Colors'),
               IconButton(tooltip: 'Make or change the colors', icon: const Icon(Icons.palette_outlined), onPressed: _editColors),
             ]),
-            IconButton(
+            if (!bluetooth) IconButton(
               tooltip: 'Restart the logger',
               icon: const Icon(Icons.restart_alt),
               onPressed: status == 'connected' ? _restart : null,
@@ -332,7 +360,30 @@ class _RawScreenState extends State<RawScreen> {
         child: Column(
           children: [
             _toolbar(),
-            if (status != 'connected')
+            if (bluetooth && bleStatus != 'connected')
+              Container(
+                width: double.infinity,
+                color: Colors.grey.shade300,
+                padding: const EdgeInsets.only(left: 12),
+                child: Row(children: [
+                  Expanded(child: Text(bleStatus == 'disconnected' ? 'Not connected' : bleStatus)),
+                  TextButton(
+                    onPressed: ble.active ? ble.disconnect : ble.connect,
+                    child: Text(ble.active ? 'Cancel' : 'Connect'),
+                  ),
+                ]),
+              ),
+            if (bluetooth && bleStatus == 'connected')
+              Container(
+                width: double.infinity,
+                color: Colors.blue.shade50,
+                padding: const EdgeInsets.only(left: 12),
+                child: Row(children: [
+                  const Expanded(child: Text('Connected over Bluetooth (view only)')),
+                  TextButton(onPressed: ble.disconnect, child: const Text('Disconnect')),
+                ]),
+              ),
+            if (!bluetooth && status != 'connected')
               Container(
                 width: double.infinity,
                 color: Colors.grey.shade300,
