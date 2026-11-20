@@ -112,4 +112,23 @@ void main() {
     p.reset(); // e.g. a different logger plugged in: back to the older format until a T line arrives
     expect(p.addLine('5'), isFalse);
   });
+
+  test('over Bluetooth: the logger\'s own gains, and values only for channels that are on', () {
+    final p = SignalProcessor(warmup: 0);
+    p.setGains([64, 0, 16, 32]); // channel 2 off: lines hold channels 1, 3, 4
+    final w = SignalProcessor.weightsFor([64, 0, 16, 32]);
+    expect(w[0], closeTo(2 * SignalProcessor.bitweights[0], 1e-15)); // half the gain: twice the step
+    expect(w[1], 0);
+    expect(w[2], closeTo(2 * SignalProcessor.bitweights[2], 1e-15));
+    expect(p.addLine('T,1.0,1792108800.0,1'), isFalse);
+    expect(p.addLine('100,200,300'), isTrue); // absolute: no change
+    expect(p.addLine('5,6,7'), isTrue);
+    expect(p.raw[0][1] - p.raw[0][0], closeTo(5 * w[0], 1e-15));
+    expect(p.raw[1][1] - p.raw[1][0], 0);
+    expect(p.raw[2][1] - p.raw[2][0], closeTo(6 * w[2], 1e-15));
+    expect(p.raw[3][1] - p.raw[3][0], closeTo(7 * w[3], 1e-15));
+    p.setGains(SignalProcessor.defaultGains); // back to USB: all four, the app's gains
+    expect(p.addLine('1,1,1,1'), isTrue);
+    expect(p.raw[1][2] - p.raw[1][1], closeTo(SignalProcessor.bitweights[1], 1e-15));
+  });
 }
