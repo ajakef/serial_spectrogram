@@ -7,26 +7,29 @@ import 'app_files.dart';
 
 /// Colors for one field (the text between two commas) of a line on the Raw tab. Null means "as usual".
 class FieldStyle {
-  const FieldStyle({this.text, this.highlight});
+  const FieldStyle({this.text, this.highlight, this.hidden = false});
 
   final Color? text;
   final Color? highlight;
+  final bool hidden; // not shown on the Raw tab (to save space)
 
-  bool get isPlain => text == null && highlight == null;
+  bool get isPlain => text == null && highlight == null && !hidden;
 
   TextStyle get textStyle => TextStyle(color: text, backgroundColor: highlight);
 
-  Map<String, Object?> toJson() => {'text': text?.toARGB32(), 'highlight': highlight?.toARGB32()};
+  Map<String, Object?> toJson() => {'text': text?.toARGB32(), 'highlight': highlight?.toARGB32(), 'hidden': hidden};
 
   factory FieldStyle.fromJson(Map<dynamic, dynamic> j) => FieldStyle(
         text: j['text'] == null ? null : Color(j['text'] as int),
         highlight: j['highlight'] == null ? null : Color(j['highlight'] as int),
+        hidden: j['hidden'] == true,
       );
 
-  FieldStyle copyWith({Color? text, Color? highlight, bool clearText = false, bool clearHighlight = false}) =>
+  FieldStyle copyWith({Color? text, Color? highlight, bool clearText = false, bool clearHighlight = false, bool? hidden}) =>
       FieldStyle(
         text: clearText ? null : (text ?? this.text),
         highlight: clearHighlight ? null : (highlight ?? this.highlight),
+        hidden: hidden ?? this.hidden,
       );
 }
 
@@ -105,17 +108,22 @@ class RawColorScheme {
     return parts.length == fields ? parts : null;
   }
 
-  /// The line drawn in color, or null if the scheme doesn't apply to it (or is off).
-  TextSpan? span(String line, TextStyle base) {
+  /// The line drawn in color, or null if the scheme doesn't apply to it (or is off). Hidden fields (and the separator
+  /// before them) are left out, unless [showHidden] is set: then they are drawn struck through (for the editor).
+  TextSpan? span(String line, TextStyle base, {bool showHidden = false}) {
     if (!enabled) return null;
     final cut = delimiter.split(line);
     if (cut.fields.length != fields) return null;
-    return TextSpan(style: base, children: [
-      for (var i = 0; i < fields; i++) ...[
-        if (i > 0) TextSpan(text: cut.separators[i - 1]),
-        TextSpan(text: cut.fields[i], style: styles[i].textStyle),
-      ],
-    ]);
+    final children = <TextSpan>[];
+    for (var i = 0; i < fields; i++) {
+      final hidden = styles[i].hidden;
+      if (hidden && !showHidden) continue;
+      if (children.isNotEmpty) children.add(TextSpan(text: cut.separators[i - 1]));
+      var style = styles[i].textStyle;
+      if (hidden) style = style.copyWith(decoration: TextDecoration.lineThrough, color: Colors.black38);
+      children.add(TextSpan(text: cut.fields[i], style: style));
+    }
+    return TextSpan(style: base, children: children);
   }
 
   Map<String, Object?> toJson() => {
