@@ -15,15 +15,18 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
+import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 // Bluetooth Low Energy (BLE) text stream from a logger that offers the "Nordic UART" service (the CO2/multigas
-// Artemis firmware does). View-only: the phone only listens. Used by the Raw tab.
+// Artemis firmware and Aspen firmware 1.0.0-11+ do). View-only: the phone only listens. Used by the Raw and Plot tabs.
 //
 // Dart calls "connect" (start looking for loggers), "connectTo" (connect to the one the user chose, by address) and
 // "disconnect" on the method channel "aspen/ble". Back on the event channel "aspen/ble/events" come status strings
@@ -43,6 +46,26 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
     private var scanning = false
     private val found = LinkedHashMap<String, String>() // address -> name of loggers seen in this scan
     private var wantConnection = false // false once the user disconnects, so no automatic reconnecting
+
+    // Test builds only (the .dev app): every byte received is also saved to a file, so a test can compare it with
+    // the logger's serial port (adb pull /sdcard/Android/data/io.github.ajakef.aspenplot.dev/files/ble_*.txt).
+    private val debugBuild = (activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    private var capture: FileOutputStream? = null
+
+    private fun startCapture() {
+        if (!debugBuild) return
+        stopCapture()
+        try {
+            val dir = activity.getExternalFilesDir(null) ?: return
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+            capture = FileOutputStream(File(dir, "ble_$stamp.txt"))
+        } catch (_: Exception) {}
+    }
+
+    private fun stopCapture() {
+        try { capture?.close() } catch (_: Exception) {}
+        capture = null
+    }
 
     private val adapter: BluetoothAdapter?
         get() = (activity.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
@@ -156,12 +179,21 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(g: BluetoothGatt, st: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                g.discoverServices()
+                // Faster radio exchanges and bigger packets, for the Aspen's data stream (a 4-channel logger sends up
+                // to tens of kB/s). Services are looked up once the packet size is agreed (onMtuChanged).
+                g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                if (!g.requestMtu(247)) g.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                handler.post { stopCapture() }
                 g.close()
                 if (gatt === g) gatt = null
                 status("disconnected")
             }
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, st: Int) {
+            g.discoverServices()
         }
 
         @SuppressLint("MissingPermission")
@@ -182,7 +214,12 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, d: android.bluetooth.BluetoothGattDescriptor, st: Int) {
-            if (st == BluetoothGatt.GATT_SUCCESS) status("connected") else status("error: could not start the stream ($st)")
+            if (st == BluetoothGatt.GATT_SUCCESS) {
+                handler.post { startCapture() }
+                status("connected")
+            } else {
+                status("error: could not start the stream ($st)")
+            }
         }
 
         // Deprecated on Android 13+, but Android still calls it there, so one version works everywhere.
@@ -191,7 +228,11 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) {
             if (c.uuid != txUuid) return
             val data = c.value ?: return
-            handler.post { send(data.copyOf()) }
+            val copy = data.copyOf()
+            handler.post {
+                try { capture?.write(copy) } catch (_: Exception) {}
+                send(copy)
+            }
         }
     }
 
@@ -206,6 +247,7 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
         wantConnection = false
         stopScan()
         closeGatt()
+        stopCapture()
         status("disconnected")
     }
 }

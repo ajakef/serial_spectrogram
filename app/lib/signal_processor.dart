@@ -35,6 +35,28 @@ class SignalProcessor {
     for (var i = 1; i < nChan; i++) _bitweightV / _gainSeismic / _sensitivitySeismic * 1e3, // mm/s
   ];
 
+  /// The same scaling for other gains (a logger plotted over Bluetooth runs with its own settings). Gain 0: channel off.
+  static List<double> weightsFor(List<int> gains) => [
+        for (var j = 0; j < nChan; j++)
+          gains[j] == 0
+              ? 0.0
+              : j == 0
+                  ? _bitweightV / (gains[0] / 16) / _sensitivityInfrasound
+                  : _bitweightV / (gains[j] / 16) / _sensitivitySeismic * 1e3,
+      ];
+
+  static const defaultGains = [128, 32, 32, 32]; // what the app sets over USB (startup_commands.dart)
+  List<double> _weights = bitweights;
+  List<int> _fieldChannels = const [0, 1, 2, 3]; // the channel each value in a data line belongs to
+
+  /// Scales the data for the logger's own gains ([128, 32, 32, 32] unless set). The logger leaves channels with gain
+  /// 0 out of its data lines, so the values in a line belong to the channels that are on, in order.
+  void setGains(List<int> gains) {
+    _weights = weightsFor(gains);
+    final on = [for (var j = 0; j < nChan; j++) if (gains[j] != 0) j];
+    _fieldChannels = on.isEmpty ? const [0, 1, 2, 3] : on;
+  }
+
   // First-order Butterworth high-pass, same as scipy.signal.butter(1, corner/nyquist, 'highpass'). Depends on the
   // sample rate, so it's set up again by reset().
   double _b0 = 0, _b1 = 0, _a1 = 0;
@@ -112,14 +134,15 @@ class SignalProcessor {
       rejected++;
       return false;
     }
-    final values = <double>[];
-    for (var j = 0; j < nChan; j++) {
-      final v = j + first < fields.length ? double.tryParse(fields[j + first]) : 0.0;
+    final values = List<double>.filled(nChan, 0.0);
+    for (var k = 0; k < _fieldChannels.length; k++) {
+      final v = k + first < fields.length ? double.tryParse(fields[k + first]) : 0.0;
       if (v == null) {
         rejected++;
         return false;
       }
-      values.add(v * bitweights[j]);
+      final j = _fieldChannels[k];
+      values[j] = v * _weights[j];
     }
     if (_absoluteNext) {
       values.fillRange(0, nChan, 0.0); // absolute values, not changes: treat as no change

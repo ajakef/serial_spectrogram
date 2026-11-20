@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'ble_link.dart';
+import 'logger_chooser.dart';
 import 'raw_color_editor.dart';
 import 'raw_colors.dart';
 import 'serial_link.dart';
@@ -15,9 +16,12 @@ enum RawOrientation { auto, portrait, landscape }
 /// The Raw tab: every character the logger (or another serial device) sends, as plain text, like a serial monitor.
 /// The baud rate can be changed to read devices other than the Aspen; it goes back to the Aspen's when you leave the tab.
 class RawScreen extends StatefulWidget {
-  const RawScreen({super.key, required this.link});
+  const RawScreen({super.key, required this.link, this.ble});
 
   final SerialLink link;
+
+  /// The app's Bluetooth connection (shared with the Plot tab); one of its own if null.
+  final BleLink? ble;
 
   /// Baud rates in the menu.
   static const bauds = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 500000, 921600];
@@ -53,9 +57,9 @@ class _RawScreenState extends State<RawScreen> {
   bool autoscroll = true;
   RawColorScheme? scheme; // saved on the phone; null until one is made
   RawOrientation orientation = RawOrientation.auto;
-  bool bluetooth = false; // reading a logger over Bluetooth instead of the USB cable
-  final ble = BleLink();
-  String bleStatus = 'disconnected';
+  late final BleLink ble = widget.ble ?? BleLink();
+  late bool bluetooth = ble.currentStatus == 'connected'; // reading a logger over Bluetooth instead of the USB cable
+  late String bleStatus = ble.currentStatus;
   late int baud = widget.link.baud;
   String status = '';
   Timer? _timer;
@@ -95,7 +99,7 @@ class _RawScreenState extends State<RawScreen> {
     for (final sub in _subs) {
       sub.cancel();
     }
-    ble.dispose();
+    if (widget.ble == null) ble.dispose(); // a shared connection stays open for the other tabs
     _scroll.dispose();
     SystemChrome.setPreferredOrientations([]); // back to turning with the phone
     super.dispose();
@@ -203,20 +207,7 @@ class _RawScreenState extends State<RawScreen> {
     current.save();
   }
 
-  /// Scans for loggers and shows them in a list; tapping one connects to it. Closing the list stops the scan.
-  Future<void> _chooseLogger() async {
-    await ble.scan();
-    if (!mounted) return;
-    final address = await showDialog<String>(
-      context: context,
-      builder: (_) => _LoggerList(ble: ble),
-    );
-    if (address != null) {
-      await ble.connectTo(address);
-    } else if (ble.currentStatus == 'scanning') {
-      await ble.disconnect(); // cancelled: stop scanning
-    }
-  }
+  Future<void> _chooseLogger() => chooseBleLogger(context, ble);
 
   /// The only way the Raw tab restarts the logger (connecting doesn't).
   Future<void> _restart() => link.restartLogger();
@@ -402,88 +393,6 @@ class _RawScreenState extends State<RawScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// The loggers found by a Bluetooth scan, updated as more appear. Pops with the address of the one tapped.
-class _LoggerList extends StatefulWidget {
-  const _LoggerList({required this.ble});
-
-  final BleLink ble;
-
-  @override
-  State<_LoggerList> createState() => _LoggerListState();
-}
-
-class _LoggerListState extends State<_LoggerList> {
-  late List<BleDevice> devices = widget.ble.currentDevices;
-  late String status = widget.ble.currentStatus;
-  final _subs = <StreamSubscription>[];
-
-  @override
-  void initState() {
-    super.initState();
-    _subs.add(widget.ble.devices.listen((d) => setState(() => devices = d)));
-    _subs.add(widget.ble.status.listen((s) {
-      if (s.startsWith('error') || s == 'asking permission' || s == 'scanning' || s == 'disconnected') {
-        setState(() => status = s);
-      }
-    }));
-  }
-
-  @override
-  void dispose() {
-    for (final sub in _subs) {
-      sub.cancel();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scanning = status == 'scanning' || status == 'asking permission';
-    final message = status.startsWith('error')
-        ? status
-        : scanning
-            ? 'Looking for loggers...'
-            : devices.isEmpty
-                ? 'No logger found. Is it on, and not connected to another phone?'
-                : 'Scan finished.';
-    return AlertDialog(
-      title: const Text('Choose a logger'),
-      content: SizedBox(
-        width: 320,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              if (scanning) const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-              if (scanning) const SizedBox(width: 8),
-              Expanded(child: Text(message)),
-            ]),
-            const SizedBox(height: 8),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final d in devices)
-                    ListTile(
-                      dense: true,
-                      title: Text(d.name),
-                      onTap: () => Navigator.pop(context, d.address),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        if (!scanning) TextButton(onPressed: widget.ble.scan, child: const Text('Scan again')),
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-      ],
     );
   }
 }

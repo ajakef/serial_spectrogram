@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'ble_link.dart';
 import 'check_screen.dart';
 import 'check_session.dart';
 import 'main.dart';
@@ -27,6 +28,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final link = SerialLink();
+  final ble = BleLink(); // Bluetooth: shared by the Plot and Raw tabs, so it stays connected between them
   late final check = CheckSession(link);
   final sites = SiteStore();
   late int tab = widget.initialTab;
@@ -53,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
     check.dispose();
     sites.dispose();
     link.dispose();
+    ble.dispose();
     super.dispose();
   }
 
@@ -70,9 +73,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _body() => KeyedSubtree(
         key: _bodyKeys[tab],
         child: switch (tab) {
-          HomeScreen.plotTab => PlotScreen(link: link),
+          HomeScreen.plotTab => PlotScreen(link: link, ble: ble),
           HomeScreen.checkTab => CheckScreen(session: check),
-          HomeScreen.rawTab => RawScreen(link: link),
+          HomeScreen.rawTab => RawScreen(link: link, ble: ble),
           _ => SitesScreen(store: sites, check: check),
         },
       );
