@@ -25,8 +25,10 @@ import java.util.UUID
 // Bluetooth Low Energy (BLE) text stream from a logger that offers the "Nordic UART" service (the CO2/multigas
 // Artemis firmware does). View-only: the phone only listens. Used by the Raw tab.
 //
-// Dart calls "connect" / "disconnect" on the method channel "aspen/ble". Status strings ("scanning", "connected",
-// "disconnected", "error: ...") and the received bytes come back on the event channel "aspen/ble/events".
+// Dart calls "connect" (start looking for loggers), "connectTo" (connect to the one the user chose, by address) and
+// "disconnect" on the method channel "aspen/ble". Back on the event channel "aspen/ble/events" come status strings
+// ("scanning", "connected", "disconnected", "error: ..."), the list of loggers found so far (a list of
+// {address, name} maps, sent each time a new one appears) and the received bytes.
 class BleSerial(private val activity: Activity, private val send: (Any) -> Unit) {
     companion object {
         val serviceUuid: UUID = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
@@ -39,6 +41,7 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
     private var scanning = false
+    private val found = LinkedHashMap<String, String>() // address -> name of loggers seen in this scan
     private var wantConnection = false // false once the user disconnects, so no automatic reconnecting
 
     private val adapter: BluetoothAdapter?
@@ -65,6 +68,21 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
         startScan()
     }
 
+    // The user chose a logger from the list.
+    @SuppressLint("MissingPermission")
+    fun connectTo(address: String) {
+        stopScan()
+        closeGatt()
+        val bt = adapter
+        if (bt == null || !bt.isEnabled) {
+            status("error: turn Bluetooth on")
+            return
+        }
+        wantConnection = true
+        status("connecting to ${found[address] ?: address}")
+        gatt = bt.getRemoteDevice(address).connectGatt(activity, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+    }
+
     // Called by MainActivity when the permission dialog is answered.
     fun onPermissionResult(granted: Boolean) {
         if (!wantConnection) return
@@ -80,6 +98,8 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
         }
         stopScan()
         closeGatt()
+        found.clear()
+        handler.post { send(emptyList<Map<String, String>>()) }
         val scanner = bt.bluetoothLeScanner
         if (scanner == null) {
             status("error: turn Bluetooth on")
@@ -102,7 +122,7 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
     private val scanTimeout = Runnable {
         if (scanning) {
             stopScan()
-            status("error: no logger found (is it on and not connected to another phone?)")
+            status("disconnected") // the list stays; the Dart side says the scan is over
         }
     }
 
@@ -118,10 +138,12 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             if (!scanning) return
-            stopScan() // the first logger found is used
-            val name = result.scanRecord?.deviceName ?: result.device.name ?: result.device.address
-            status("connecting to $name")
-            gatt = result.device.connectGatt(activity, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+            val address = result.device.address
+            val name = result.scanRecord?.deviceName ?: result.device.name ?: address
+            if (found[address] == name) return
+            found[address] = name
+            val list = found.map { mapOf("address" to it.key, "name" to it.value) }
+            handler.post { send(list) }
         }
 
         override fun onScanFailed(errorCode: Int) {

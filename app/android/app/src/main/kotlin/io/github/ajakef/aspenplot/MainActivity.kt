@@ -142,6 +142,7 @@ class MainActivity : FlutterActivity(), SerialInputOutputManager.Listener {
         MethodChannel(messenger, "aspen/ble").setMethodCallHandler { call, result ->
             when (call.method) {
                 "connect" -> { bleSerial.connect(); result.success(null) }
+                "connectTo" -> { bleSerial.connectTo(call.arguments as String); result.success(null) }
                 "disconnect" -> { bleSerial.disconnect(); result.success(null) }
                 else -> result.notImplemented()
             }
