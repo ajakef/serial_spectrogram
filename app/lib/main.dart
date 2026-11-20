@@ -227,7 +227,7 @@ class _PlotScreenState extends State<PlotScreen> {
             if (bluetooth && bleStatus == 'connected')
               Positioned(
                 top: 4,
-                left: 4,
+                right: 4, // where the rate menu and firmware button are over USB (not used over Bluetooth)
                 child: _BluetoothNote(name: ble.chosenName, rate: bleSettings?.sampleRate, onClose: _useUsb),
               ),
             if (!bluetooth) Positioned(top: 0, right: 48, child: RateMenu(onChanged: _changeRate)),

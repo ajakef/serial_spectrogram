@@ -52,6 +52,11 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
     private val debugBuild = (activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     private var capture: FileOutputStream? = null
 
+    // Android often fails a first connection attempt with status 133 ("GATT error"); trying again usually works.
+    private var lastAddress: String? = null
+    private var retriesLeft = 0
+    private var streaming = false // the stream started on this connection
+
     private fun startCapture() {
         if (!debugBuild) return
         stopCapture()
@@ -102,6 +107,15 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
             return
         }
         wantConnection = true
+        lastAddress = address
+        retriesLeft = 2
+        openGatt(address)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun openGatt(address: String) {
+        val bt = adapter ?: return
+        streaming = false
         status("connecting to ${found[address] ?: address}")
         gatt = bt.getRemoteDevice(address).connectGatt(activity, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
@@ -186,8 +200,15 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 handler.post { stopCapture() }
                 g.close()
-                if (gatt === g) gatt = null
-                status("disconnected")
+                val mine = gatt === g
+                if (mine) gatt = null
+                val address = lastAddress
+                if (mine && !streaming && st != BluetoothGatt.GATT_SUCCESS && wantConnection && retriesLeft > 0 && address != null) {
+                    retriesLeft--
+                    handler.postDelayed({ if (wantConnection && gatt == null) openGatt(address) }, 500)
+                } else {
+                    status("disconnected")
+                }
             }
         }
 
@@ -215,6 +236,7 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
 
         override fun onDescriptorWrite(g: BluetoothGatt, d: android.bluetooth.BluetoothGattDescriptor, st: Int) {
             if (st == BluetoothGatt.GATT_SUCCESS) {
+                streaming = true
                 handler.post { startCapture() }
                 status("connected")
             } else {
