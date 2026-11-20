@@ -51,6 +51,8 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
     // the logger's serial port (adb pull /sdcard/Android/data/io.github.ajakef.aspenplot.dev/files/ble_*.txt).
     private val debugBuild = (activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     private var capture: FileOutputStream? = null
+    private var captureCount = 0L // notifications in this capture (logged at the end, to compare with the logger's count)
+    private var captureBytes = 0L
 
     // Android often fails a first connection attempt with status 133 ("GATT error"); trying again usually works.
     private var lastAddress: String? = null
@@ -64,10 +66,13 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
             val dir = activity.getExternalFilesDir(null) ?: return
             val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
             capture = FileOutputStream(File(dir, "ble_$stamp.txt"))
+            captureCount = 0
+            captureBytes = 0
         } catch (_: Exception) {}
     }
 
     private fun stopCapture() {
+        if (capture != null) android.util.Log.i("AspenBle", "capture ended: $captureCount notifications, $captureBytes bytes")
         try { capture?.close() } catch (_: Exception) {}
         capture = null
     }
@@ -252,6 +257,10 @@ class BleSerial(private val activity: Activity, private val send: (Any) -> Unit)
             val data = c.value ?: return
             val copy = data.copyOf()
             handler.post {
+                if (capture != null) {
+                    captureCount++
+                    captureBytes += copy.size
+                }
                 try { capture?.write(copy) } catch (_: Exception) {}
                 send(copy)
             }
