@@ -80,7 +80,7 @@ class _RawColorEditorState extends State<RawColorEditor> {
   /// Applies and saves the current choices (when there is a line to base them on).
   void _autosave() {
     if (lines.isEmpty || fields.isEmpty) return;
-    widget.onChanged(RawColorScheme(styles: [...styles], delimiter: delimiter, enabled: widget.current?.enabled ?? true));
+    widget.onChanged(RawColorScheme(styles: [...styles], delimiter: delimiter, enabled: true)); // changing colors turns them on
   }
 
   /// The menu's value: a preset, or null for "Other".
