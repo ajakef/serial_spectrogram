@@ -190,11 +190,18 @@ class _RawScreenState extends State<RawScreen> {
     final recent = [
       for (var i = _lines.length - 1; i >= 0 && _lines.length - i <= 60; i--) _lines[i], // newest first
     ];
-    final made = await Navigator.push<RawColorScheme>(
-        context, MaterialPageRoute(builder: (_) => RawColorEditor(recentLines: recent, current: scheme)));
-    if (made == null || !mounted) return;
-    setState(() => scheme = made);
-    await made.save();
+    await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => RawColorEditor(
+                  recentLines: recent,
+                  current: scheme,
+                  onChanged: (made) {
+                    if (!mounted) return;
+                    setState(() => scheme = made);
+                    made.save();
+                  },
+                )));
   }
 
   void _setColorsOn(bool on) {
@@ -318,11 +325,16 @@ class _RawScreenState extends State<RawScreen> {
         onHorizontalDragUpdate: (d) => setState(() => _sideways = (_sideways - d.delta.dx).clamp(0.0, room)),
         child: Stack(
           children: [
-            NotificationListener<ScrollUpdateNotification>(
+            NotificationListener<ScrollNotification>(
               onNotification: (n) {
-                // Dragging the text away from the bottom stops autoscrolling (tick the box to resume).
-                if (autoscroll && n.dragDetails != null && n.metrics.extentAfter > _lineHeight) {
+                // Dragging the text away from the bottom stops autoscrolling; reaching the bottom again (by drag
+                // or fling) or ticking the box resumes it.
+                if (n is ScrollUpdateNotification && autoscroll && n.dragDetails != null && n.metrics.extentAfter > _lineHeight) {
                   setState(() => autoscroll = false);
+                } else if ((n is ScrollUpdateNotification || n is ScrollEndNotification) &&
+                    !autoscroll &&
+                    n.metrics.extentAfter <= 1) {
+                  setState(() => autoscroll = true);
                 }
                 return false;
               },

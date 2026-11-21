@@ -5,11 +5,14 @@ import 'raw_colors.dart';
 /// Where the Raw tab's color scheme is made: pick one of the recent lines as the example (its commas show which
 /// field is which), then tap a field to choose its colors. The result applies only to lines with the same number of fields.
 class RawColorEditor extends StatefulWidget {
-  const RawColorEditor({super.key, required this.recentLines, this.current});
+  const RawColorEditor({super.key, required this.recentLines, this.current, required this.onChanged});
 
   /// Recent lines from the Raw tab, newest first.
   final List<String> recentLines;
   final RawColorScheme? current;
+
+  /// Called after every change, so the Raw tab can apply and save it (there is no Save button).
+  final void Function(RawColorScheme) onChanged;
 
   @override
   State<RawColorEditor> createState() => _RawColorEditorState();
@@ -65,12 +68,19 @@ class _RawColorEditorState extends State<RawColorEditor> {
         delimiter = d;
         selected = 0;
         _resize();
+        _autosave();
       });
 
   /// One style per field of the chosen example line: kept for fields that were already styled, plain for new ones.
   void _resize() {
     final n = fields.length;
     styles = [for (var i = 0; i < n; i++) i < styles.length ? styles[i] : const FieldStyle()];
+  }
+
+  /// Applies and saves the current choices (when there is a line to base them on).
+  void _autosave() {
+    if (lines.isEmpty || fields.isEmpty) return;
+    widget.onChanged(RawColorScheme(styles: [...styles], delimiter: delimiter, enabled: true)); // changing colors turns them on
   }
 
   /// The menu's value: a preset, or null for "Other".
@@ -88,6 +98,7 @@ class _RawColorEditorState extends State<RawColorEditor> {
         void change(FieldStyle s) {
           setState(() => styles[i] = s);
           setSheet(() {});
+          _autosave();
         }
 
         return SafeArea(
@@ -108,7 +119,13 @@ class _RawColorEditorState extends State<RawColorEditor> {
                 const SizedBox(height: 6),
                 _swatches(highlightPalette, styles[i].highlight,
                     (c) => change(styles[i].copyWith(highlight: c, clearHighlight: c == null))),
-                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Hide this field'),
+                  subtitle: const Text('Leaves it out of the lines on the Raw tab'),
+                  value: styles[i].hidden,
+                  onChanged: (v) => change(styles[i].copyWith(hidden: v)),
+                ),
                 Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))),
               ],
             ),
@@ -143,7 +160,7 @@ class _RawColorEditorState extends State<RawColorEditor> {
 
   /// A line as it will look with the colors chosen so far (plain if it has a different number of fields).
   Widget _preview(String line) {
-    final span = RawColorScheme(styles: styles, delimiter: delimiter).span(line, _mono.copyWith(color: Colors.black));
+    final span = RawColorScheme(styles: styles, delimiter: delimiter).span(line, _mono.copyWith(color: Colors.black), showHidden: true);
     return Text.rich(span ?? TextSpan(text: line, style: _mono), softWrap: false, overflow: TextOverflow.ellipsis);
   }
 
@@ -154,12 +171,6 @@ class _RawColorEditorState extends State<RawColorEditor> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Colors for lines'),
-        actions: [
-          TextButton(
-            onPressed: lines.isEmpty || fields.isEmpty ? null : () => Navigator.pop(context, RawColorScheme(styles: [...styles], delimiter: delimiter)),
-            child: const Text('Save'),
-          ),
-        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(12),
@@ -227,7 +238,7 @@ class _RawColorEditorState extends State<RawColorEditor> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text('2. Tap a field to choose its colors', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('2. Tap a field to choose its colors, or to hide it', style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 Wrap(
                   spacing: 8,
@@ -239,7 +250,7 @@ class _RawColorEditorState extends State<RawColorEditor> {
                         backgroundColor: styles[i].highlight ?? Colors.grey.shade200,
                         label: Text(
                           '${i + 1}: ${f[i].isEmpty ? '(empty)' : f[i]}',
-                          style: _mono.copyWith(color: styles[i].text ?? Colors.black),
+                          style: _mono.copyWith(color: styles[i].text ?? Colors.black, decoration: styles[i].hidden ? TextDecoration.lineThrough : null),
                         ),
                       ),
                   ],
@@ -248,13 +259,16 @@ class _RawColorEditorState extends State<RawColorEditor> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: () => setState(() => styles = [for (final _ in styles) const FieldStyle()]),
+                    onPressed: () {
+                      setState(() => styles = [for (final _ in styles) const FieldStyle()]);
+                      _autosave();
+                    },
                     icon: const Icon(Icons.format_color_reset),
-                    label: const Text('Clear all colors'),
+                    label: const Text('Clear all colors and hidden fields'),
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text('3. Tap Save (top right). Turn the colors on and off with the Colors box on the Raw tab.'),
+                const Text('Changes are saved as you make them. Turn the colors (and hiding) on and off with the Colors box on the Raw tab.'),
           ],
         ],
       ),
