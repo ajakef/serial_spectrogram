@@ -1,110 +1,14 @@
+import 'aspen_config.dart';
 import 'boot_report.dart';
 
-/// CONFIG.TXT as the firmware reads it today: one value per line, in a fixed order, with optional "# comments".
-/// Blank lines and comment-only lines are skipped. (aspen-firmware other_functions.h ReadConfig; if the file format
-/// changes, e.g. to "name=value" lines, update this file and [ConfigValues.commands] stays the same.)
-const configSettingNames = [
-  'channel 1 gain', 'channel 2 gain', 'channel 3 gain', 'channel 4 gain', 'sample rate', 'gps_mode',
-  'gps_cycle_minutes', 'gps_quota', 'use_compression', 'network code', 'station code', 'location code',
-  'channel 1 code', 'channel 2 code', 'channel 3 code', 'channel 4 code',
-];
+export 'aspen_config.dart' show ConfigLineNote;
 
-// Words in a comment that name each setting, to spot a missing or extra line (every value after it shifts).
-final _commentPatterns = [
-  for (var i = 1; i <= 4; i++) RegExp('channel\\s*$i\\s*gain'),
-  RegExp(r'sample[ _]rate'),
-  RegExp(r'gps[ _]mode'),
-  RegExp(r'cycle'),
-  RegExp(r'quota'),
-  RegExp(r'compression'),
-  RegExp(r'network'),
-  RegExp(r'station'),
-  RegExp(r'location'),
-  for (var i = 1; i <= 4; i++) RegExp('channel\\s*$i\\s*code'),
-];
+// CONFIG.TXT itself is checked by aspen_config.dart, with the firmware's rules. This file holds the Check tab's editor
+// model: the settings it changes and the startup commands that set them.
 
-const allowedGains = [0, 1, 2, 4, 8, 16, 32, 64, 128];
-const allowedRates = [100, 200, 400, 800, 1000, 2000]; // 2000: firmware 1.0.0-8+, channel 1 only
-
-/// One line of CONFIG.TXT, with the setting it's read as and anything wrong with it.
-class ConfigLineNote {
-  ConfigLineNote(this.lineNumber, this.text, {this.setting, this.problem});
-  final int lineNumber; // 1-based, counting every line in the file
-  final String text;
-  final String? setting; // null for blank/comment-only lines and extra lines
-  final String? problem;
-}
-
-/// Goes through the file's lines as the firmware would. Returns null if the file isn't in the one-value-per-line
-/// format (then the app just shows it).
-List<ConfigLineNote>? checkConfigFile(String text) {
-  final lines = text.replaceAll('\r', '').split('\n');
-  if (lines.isNotEmpty && lines.last.isEmpty) lines.removeLast();
-  final notes = <ConfigLineNote>[];
-  var index = 0; // which setting the next value line is read as
-  for (var n = 0; n < lines.length; n++) {
-    final line = lines[n];
-    final hash = line.indexOf('#');
-    final value = (hash >= 0 ? line.substring(0, hash) : line).replaceAll(RegExp(r'[ \t]'), '');
-    final comment = hash >= 0 ? line.substring(hash + 1).toLowerCase() : '';
-    if (value.isEmpty) {
-      notes.add(ConfigLineNote(n + 1, line));
-      continue;
-    }
-    if (value.contains('=')) return null; // "name=value" lines: a different format
-    if (index >= configSettingNames.length) {
-      notes.add(ConfigLineNote(n + 1, line, problem: 'Extra line: the logger ignores it'));
-      continue;
-    }
-    final name = configSettingNames[index];
-    var problem = _valueProblem(index, value);
-    if (problem == null && comment.isNotEmpty && !_commentPatterns[index].hasMatch(comment)) {
-      final other = [for (var k = 0; k < _commentPatterns.length; k++) if (_commentPatterns[k].hasMatch(comment)) k];
-      if (other.isNotEmpty) {
-        problem = 'Read as $name, but its comment says ${configSettingNames[other.first]}: '
-            'is a line above it missing or extra?';
-      }
-    }
-    notes.add(ConfigLineNote(n + 1, line, setting: name, problem: problem));
-    index++;
-  }
-  if (index < 9) {
-    notes.add(ConfigLineNote(lines.length + 1, '',
-        problem: 'Only $index of the first 9 settings are in the file: '
-            '${configSettingNames.sublist(index, 9).join(', ')} use defaults'));
-  }
-  return notes;
-}
-
-/// What the firmware would reject in a value (its checks in ReadConfig), or null.
-String? _valueProblem(int index, String value) {
-  if (index >= 9) {
-    if (value == '-') return null;
-    final maxLen = const [2, 5, 2, 3, 3, 3, 3][index - 9];
-    final exact = index >= 12;
-    if (!RegExp(r'^[A-Za-z0-9]+$').hasMatch(value)) return 'Codes may hold only letters and digits ("-" for the default)';
-    if (exact && value.length != maxLen) return 'Channel codes need exactly 3 characters';
-    if (value.length > maxLen) return 'At most $maxLen characters';
-    return null;
-  }
-  final number = int.tryParse(RegExp(r'^-?\d+').stringMatch(value) ?? '');
-  if (number == null) return 'Not a number: the default is used';
-  final ok = switch (index) {
-    < 4 => allowedGains.contains(number),
-    4 => allowedRates.contains(number),
-    5 => number >= 1 && number <= 4,
-    6 || 7 => number >= 1 && number <= 255,
-    _ => number == 0 || number == 1,
-  };
-  if (ok) return null;
-  return switch (index) {
-    < 4 => 'Gains must be one of ${allowedGains.join(', ')}',
-    4 => 'Sample rate must be one of ${allowedRates.join(', ')}',
-    5 => 'gps_mode must be 1-4',
-    6 || 7 => 'Must be 1-255',
-    _ => 'Must be 0 or 1',
-  };
-}
+/// The values the editor offers: the firmware's (from its settings table, aspen_config_spec.dart).
+final allowedGains = AspenConfigSpec.gains;
+final allowedRates = AspenConfigSpec.sampleRates; // 4000: channel 1 only
 
 /// The settings the Check tab's editor changes, and the startup commands that set them. Empty codes mean "the
 /// default": no network or location code, the serial number as the station code, and channel codes that follow the
@@ -162,8 +66,8 @@ class ConfigValues {
     }
     if (gains.every((g) => g == 0)) out.add('At least one channel must be on (gain above 0)');
     if (!allowedRates.contains(sampleRate)) out.add('Sample rate must be one of ${allowedRates.join(', ')}');
-    if (sampleRate >= 2000 && gains.skip(1).any((g) => g != 0)) {
-      out.add('At 2000 per second only channel 1 records: set the channel 2-4 gains to 0');
+    if (sampleRate >= 4000 && gains.skip(1).any((g) => g != 0)) {
+      out.add('At 4000 per second only channel 1 records: set the channel 2-4 gains to 0');
     }
     if (gpsMode < 1 || gpsMode > 4) out.add('GPS mode must be 1-4');
     if (gpsCycleMinutes < 1 || gpsCycleMinutes > 255) out.add('GPS cycle must be 1-255 minutes');

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'config_file.dart';
+import 'aspen_config.dart';
 
 /// Reads the Aspen's startup report (the lines it prints over the cable as it starts) and the health (H) lines after
 /// it, and turns them into the Check tab's checklist. Plain Dart, no Flutter, so it can be tested on a computer with
@@ -186,6 +186,7 @@ class FileTransfer {
   final StringBuffer _base64 = StringBuffer();
   int? expectedBytes;
   String? text; // set when complete and the CRC matches
+  List<int>? bytes; // the file as on the card (for checking it byte by byte, as the logger reads it)
   String? error;
   bool get done => text != null || error != null;
 }
@@ -234,7 +235,10 @@ class BootReport {
   bool gpsOffByConfig = false;
   bool infrasoundOnlyUnit = false;
   FileTransfer? configFile; // CONFIG.TXT read with GT:
-  List<ConfigLineNote>? configLines; // its lines, checked (null if not read, or not in the one-value-per-line format)
+  List<ConfigLineNote>? configLines; // its lines, checked with the firmware's rules (null if not read)
+  AspenConfigCheck? configCheck; // the whole check of CONFIG.TXT (aspen_config.dart)
+  List<int>? _checkedBytes; // what configCheck was made from
+  String? _checkedFirmware;
   final commandReplies = <String>[]; // "Gains accepted ...", "Config set ...", "Config saved ..." and failures
   String? currentStep; // the step the logger announced last ("Beginning SD card...")
 
@@ -445,6 +449,7 @@ class BootReport {
       if (crc != null && crc32(bytes) != crc) {
         t.error = 'garbled on the way (CRC mismatch)';
       } else {
+        t.bytes = bytes;
         t.text = utf8.decode(bytes, allowMalformed: true);
       }
     } catch (e) {
@@ -542,12 +547,23 @@ class BootReport {
         ..detail = 'Has problems';
     }
     if (s != null) config.notes.addAll(settingsWarnings(s));
-    final fileText = configFile?.text;
-    if (fileText != null) {
-      configLines = checkConfigFile(fileText);
-      for (final note in configLines ?? const <ConfigLineNote>[]) {
-        if (note.problem != null) config.notes.add('Line ${note.lineNumber}: ${note.problem}');
+    final fileBytes = configFile?.bytes;
+    if (fileBytes != null) {
+      // The file checked with the firmware's rules: the logger's own messages for anything it didn't already report
+      // (e.g. older firmware), what it accepts silently, and warnings for firmware too old for the file's format.
+      if (configCheck == null || !identical(_checkedBytes, fileBytes) || _checkedFirmware != firmware) {
+        configCheck = checkAspenConfig(fileBytes, firmware: firmware);
+        _checkedBytes = fileBytes;
+        _checkedFirmware = firmware;
       }
+      final check = configCheck!;
+      configLines = check.lines;
+      for (final e in check.errors) {
+        final message = e.replaceFirst('Error: ', '');
+        if (!configErrors.contains(message)) config.notes.add(message);
+      }
+      config.notes.addAll(check.warnings);
+      if (check.errors.isNotEmpty && config.state == CheckState.ok) config.state = CheckState.fail;
     }
     if (config.state == CheckState.ok && config.notes.isNotEmpty) config.state = CheckState.warn;
 
