@@ -279,7 +279,7 @@ class _CheckScreenState extends State<CheckScreen> {
           _kv('Sample rate', '${s.sampleRate} sps'),
           _kv('GPS', 'mode ${s.gpsMode}, cycle ${s.gpsCycleMinutes} min, quota ${s.gpsQuota}'
               '${s.gpsSettleS != null ? ', settle ${s.gpsSettleS} s' : ''}'),
-          _kv('SEED codes', '${s.stationId}.${s.channels.join('/')}'),
+          _kv('SEED codes', '${s.stationId}.${[for (var i = 0; i < 4; i++) s.channelLabel(i)].join('/')}'),
           if (s.fileMinutes != null) _kv('File length', '${s.fileMinutes} min'),
         ],
         if (report.commandReplies.isNotEmpty) _kv('Command replies', report.commandReplies.join('\n')),

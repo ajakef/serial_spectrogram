@@ -84,6 +84,24 @@ void main() {
     expect(v.differencesFrom(reported, serialNumber: 2), isEmpty);
   });
 
+  test('codes the logger chose from its sensors (infrasound on channels 2-4) stay defaults', () {
+    final bySensors = LoggerSettings.parse('Config: gains 128,32,32,32; 200 sps; gps_mode 1, cycle 30 min, quota 20, '
+        'settle 20 s; compression on; SEED codes .00002..HDF.HDF.HDF.HDF; channel locations -,01,02,03; files 1440 min')!;
+    expect(bySensors.channelLocations, ['', '01', '02', '03']);
+    expect([for (var i = 0; i < 4; i++) bySensors.channelLabel(i)], ['HDF', '01.HDF', '02.HDF', '03.HDF']);
+    final v = ConfigValues.fromReport(bySensors, serialNumber: 2);
+    expect(v.channels, ['', '', '', '']);
+    expect(v.location, '');
+    expect(v.commands(), containsAll(['CF:location=-', 'CF:channel2=-', 'CF:channel3=-', 'CF:channel4=-']));
+    expect(v.differencesFrom(bySensors, serialNumber: 2), isEmpty);
+    // a code set in the editor stops the sensor check, so every channel is compared again
+    expect((ConfigValues.fromReport(bySensors)..channels[1] = 'EHZ').differencesFrom(bySensors),
+        ['channel 2 code HDF (wanted EHZ)', 'channel 3 code HDF (wanted EHN)', 'channel 4 code HDF (wanted EHE)']);
+    expect(BootReport.settingsWarnings(bySensors), isEmpty);  // HDF on channels 2-4 is right for infrasound
+    expect(reported.channelLocations, isNull);
+    expect(reported.channelLabel(1), 'DHZ');
+  });
+
   test('the editor catches what the logger would reject', () {
     final v = ConfigValues.fromReport(reported, serialNumber: 2)
       ..channels[1] = 'DH'

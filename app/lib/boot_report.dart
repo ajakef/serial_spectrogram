@@ -34,6 +34,7 @@ class LoggerSettings {
     this.station = '',
     this.location = '',
     this.channels = const ['', '', '', ''],
+    this.channelLocations,
     this.fileMinutes,
   });
 
@@ -47,12 +48,18 @@ class LoggerSettings {
   final String station;
   final String location;
   final List<String> channels;
+
+  /// Each channel's own location code, when the firmware gave channels their own (1.0.0-32: no codes in CONFIG.TXT and
+  /// infrasound sensors found on channels 2-4, which then get locations 01-03): "; channel locations -,01,02,03" after
+  /// the SEED codes. Null when the line has none (every channel has [location]).
+  final List<String>? channelLocations;
   final int? fileMinutes;
 
   static final _gains = RegExp(r'gains (\d+),(\d+),(\d+),(\d+)');
   static final _rate = RegExp(r'(\d+) sps');
   static final _gps = RegExp(r'gps_mode (\d+), cycle (\d+) min, quota (\d+)(?:, settle (\d+) s)?');
   static final _codes = RegExp(r'SEED codes ([^;]*)');
+  static final _locations = RegExp(r'channel locations ([^;]*)');
   static final _files = RegExp(r'files (\d+) min');
 
   /// Reads a "Config: ..." line; null if it isn't one.
@@ -68,6 +75,12 @@ class LoggerSettings {
       final parts = c[1]!.trim().split('.');
       if (parts.length == 7) codes = parts;
     }
+    List<String>? locations;
+    final l = _locations.firstMatch(line);
+    if (l != null) {
+      final parts = l[1]!.trim().split(',');
+      if (parts.length == 4) locations = [for (final p in parts) p == '-' ? '' : p];
+    }
     final f = _files.firstMatch(line);
     return LoggerSettings(
       gains: [for (var i = 1; i <= 4; i++) int.parse(g[i]!)],
@@ -80,11 +93,17 @@ class LoggerSettings {
       station: codes[1],
       location: codes[2],
       channels: codes.sublist(3),
+      channelLocations: locations,
       fileMinutes: f == null ? null : int.parse(f[1]!),
     );
   }
 
   int get channelCount => gains.where((g) => g > 0).length;
+
+  /// Channel i's code with its own location in front when it has one ("01.HDF"), else just the code.
+  String channelLabel(int i) => channelLocations == null || channelLocations![i].isEmpty || channels[i].isEmpty
+      ? channels[i]
+      : '${channelLocations![i]}.${channels[i]}';
 
   /// network.station.location, as SEED writes it (blank parts stay empty).
   String get stationId => '$network.$station.$location';
@@ -105,7 +124,7 @@ class LoggerSettings {
   String get channelsText {
     final on = [for (var i = 0; i < 4; i++) if (gains[i] > 0) i];
     if (on.isEmpty) return 'none';
-    return on.map((i) => '${channels[i].isEmpty ? 'ch${i + 1}' : channels[i]} (gain ${gains[i]})').join(', ');
+    return on.map((i) => '${channels[i].isEmpty ? 'ch${i + 1}' : channelLabel(i)} (gain ${gains[i]})').join(', ');
   }
 }
 
@@ -621,7 +640,8 @@ class BootReport {
     for (var i = 0; i < 4; i++) {
       final code = s.channels[i];
       if (s.gains[i] == 0 || code.length != 3) continue;
-      final expected = seedBandCode(s.sampleRate, longPeriod: i == 0);
+      // long period: channel 1, or an infrasound code (xDF) on another channel (infrasound sensors on channels 2-4)
+      final expected = seedBandCode(s.sampleRate, longPeriod: i == 0 || code[1] == 'D');
       if (expected != null && code[0] != expected) {
         have.add(code);
         want.add('$expected${code.substring(1)}');

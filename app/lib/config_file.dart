@@ -132,7 +132,10 @@ class ConfigValues {
   String location;
   List<String> channels;
 
-  /// The logger's settings from its startup report, with codes that equal their defaults shown as defaults.
+  /// The logger's settings from its startup report, with codes that equal their defaults shown as defaults. Channel
+  /// codes that came with their own locations (firmware 1.0.0-32: none set, and infrasound sensors found on channels
+  /// 2-4) are defaults too: saving them would set them, the sensor check would stop, and channels 1-4 would then share
+  /// one code and location.
   factory ConfigValues.fromReport(LoggerSettings s, {int? serialNumber}) {
     final defaultStation = serialNumber == null ? null : (serialNumber % 100000).toString().padLeft(5, '0');
     return ConfigValues(
@@ -145,7 +148,8 @@ class ConfigValues {
       station: s.station == defaultStation ? '' : s.station,
       location: s.location,
       channels: [
-        for (var i = 0; i < 4; i++) s.channels[i] == BootReport.defaultChannelCode(i, s.sampleRate) ? '' : s.channels[i],
+        for (var i = 0; i < 4; i++)
+          s.channelLocations != null || s.channels[i] == BootReport.defaultChannelCode(i, s.sampleRate) ? '' : s.channels[i],
       ],
     );
   }
@@ -226,8 +230,13 @@ class ConfigValues {
     final wantStation =
         station.isNotEmpty ? station : (serialNumber == null ? s.station : (serialNumber % 100000).toString().padLeft(5, '0'));
     if (s.station != wantStation) out.add('station "${s.station}" (wanted "$wantStation")');
+    // All codes blank, and the logger found infrasound sensors on channels 2-4 (firmware 1.0.0-32): it chose the
+    // channel codes itself.
+    final bySensors = s.channelLocations != null && location.isEmpty && channels.every((c) => c.isEmpty);
     for (var i = 0; i < 4; i++) {
-      if (s.channels[i] != channelCode(i)) out.add('channel ${i + 1} code ${s.channels[i]} (wanted ${channelCode(i)})');
+      if (!bySensors && s.channels[i] != channelCode(i)) {
+        out.add('channel ${i + 1} code ${s.channels[i]} (wanted ${channelCode(i)})');
+      }
     }
     return out;
   }
