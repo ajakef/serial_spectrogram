@@ -164,6 +164,7 @@ class Site {
     this.station = '',
     this.location = '',
     List<String>? channels,
+    List<String>? channelLocations,
     this.sampleRate,
     this.waypoint,
     List<Visit>? visits,
@@ -172,6 +173,7 @@ class Site {
         created = created ?? DateTime.now().toUtc(),
         updated = updated ?? DateTime.now().toUtc(),
         channels = channels ?? ['', '', '', ''],
+        channelLocations = channelLocations ?? ['', '', '', ''],
         visits = visits ?? [];
 
   final String id;
@@ -182,10 +184,16 @@ class Site {
   String station;
   String location;
   List<String> channels; // '' means the default for the sample rate
+  /// Each channel's own location code, from a logger that gave channels their own (firmware 1.0.0-32: infrasound
+  /// sensors found on channels 2-4 get locations 01-03); '' means the site's [location].
+  List<String> channelLocations;
   int? sampleRate; // from the logger, when filled in from the Check tab
   Waypoint? waypoint;
   final List<Visit> visits;
   bool deleted;
+
+  /// The location code the logger writes for channel [i].
+  String locationOf(int i) => channelLocations[i].isNotEmpty ? channelLocations[i] : location;
 
   Iterable<Visit> get liveVisits => visits.where((v) => !v.deleted);
 
@@ -222,6 +230,7 @@ class Site {
         'station': station,
         'location': location,
         'channels': channels,
+        'channelLocations': channelLocations,
         'sampleRate': sampleRate,
         'waypoint': waypoint?.toJson(),
         'visits': [for (final v in visits) v.toJson()],
@@ -237,6 +246,7 @@ class Site {
         station: j['station'] as String? ?? '',
         location: j['location'] as String? ?? '',
         channels: [for (final c in (j['channels'] as List? ?? const ['', '', '', ''])) c as String],
+        channelLocations: [for (final c in (j['channelLocations'] as List? ?? const ['', '', '', ''])) c as String],
         sampleRate: (j['sampleRate'] as num?)?.toInt(),
         waypoint: Waypoint.fromJson(j['waypoint']),
         visits: [for (final v in (j['visits'] as List? ?? const [])) Visit.fromJson(v as Map)],
@@ -256,6 +266,7 @@ bool mergeSite(Site mine, Site other) {
       ..station = other.station
       ..location = other.location
       ..channels = List.of(other.channels)
+      ..channelLocations = List.of(other.channelLocations)
       ..sampleRate = other.sampleRate
       ..waypoint = other.waypoint
       ..deleted = other.deleted;

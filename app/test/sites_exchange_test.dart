@@ -56,7 +56,8 @@ void main() {
     expect(names, containsAll(['README.txt', 'sites.csv', 'visits.csv', 'photos.csv', 'sites.kml', 'sites.json',
         'photos/${site.id}/${photo.id}.jpg', 'photos_marked/KIRK1_20261112_1.jpg']));
     final csv = utf8.decode(archive.findFile('sites.csv')!.content).split('\n');
-    expect(csv[1], startsWith('${site.id},2,XP,KIRK1,,CDF,DHZ,DHN,XYZ,400,43.5000000,-116.1000000,820.0,4.0,20,'));
+    expect(csv[0], contains('channel4,location1,location2,location3,location4,sample_rate'));
+    expect(csv[1], startsWith('${site.id},2,XP,KIRK1,,CDF,DHZ,DHN,XYZ,,,,,400,43.5000000,-116.1000000,820.0,4.0,20,'));
     expect(utf8.decode(archive.findFile('visits.csv')!.content), contains('"under the sagebrush, ""north"" side"'));
     expect(utf8.decode(archive.findFile('photos.csv')!.content), contains('Seismic 1 (0.250, 0.500)'));
     expect(utf8.decode(archive.findFile('sites.kml')!.content), contains('<coordinates>-116.1,43.5,820.0</coordinates>'));

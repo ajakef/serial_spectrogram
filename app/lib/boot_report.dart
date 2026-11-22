@@ -100,6 +100,9 @@ class LoggerSettings {
 
   int get channelCount => gains.where((g) => g > 0).length;
 
+  /// Channel i's location code as the logger writes it.
+  String locationOf(int i) => channelLocations?[i] ?? location;
+
   /// Channel i's code with its own location in front when it has one ("01.HDF"), else just the code.
   String channelLabel(int i) => channelLocations == null || channelLocations![i].isEmpty || channels[i].isEmpty
       ? channels[i]

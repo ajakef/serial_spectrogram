@@ -65,6 +65,8 @@ Notes on the columns:
   deployment, are more accurate for station metadata.
 - channel1-channel4 are SEED channel codes. Blank codes in the app mean the logger's default, filled
   in here when the sample rate is known (it is when the site was filled in from the Check tab).
+- location1-location4 are the location codes the logger writes for each channel: the site's location, except
+  that a logger which found infrasound sensors on channels 2-4 uses 01, 02, 03 for them (channel 1 stays blank).
 
 To merge this into the app on another phone: Sites tab, menu, Import, and choose this zip file.
 ''';
@@ -81,7 +83,7 @@ Future<File> exportSites(SiteStore store, List<Site> sites, {void Function(Strin
 
   final siteRows = <List<Object?>>[
     ['site_id', 'serial_number', 'network', 'station', 'location', 'channel1', 'channel2', 'channel3', 'channel4',
-      'sample_rate', 'latitude', 'longitude', 'elevation_m', 'horizontal_accuracy_m', 'gps_fixes', 'waypoint_time',
+      'location1', 'location2', 'location3', 'location4', 'sample_rate', 'latitude', 'longitude', 'elevation_m', 'horizontal_accuracy_m', 'gps_fixes', 'waypoint_time',
       'setup_time', 'pickup_time', 'visits', 'photos'],
   ];
   final visitRows = <List<Object?>>[
@@ -100,7 +102,8 @@ Future<File> exportSites(SiteStore store, List<Site> sites, {void Function(Strin
     final visits = s.liveVisits.toList()..sort((a, b) => a.time.compareTo(b.time));
     final channels = resolvedChannels(s);
     siteRows.add([
-      s.id, s.serialNumber, s.network, s.station, s.location, ...channels, s.sampleRate,
+      s.id, s.serialNumber, s.network, s.station, s.location, ...channels,
+      for (var i = 0; i < 4; i++) s.locationOf(i), s.sampleRate,
       w?.lat.toStringAsFixed(7), w?.lon.toStringAsFixed(7), w?.altitude?.toStringAsFixed(1),
       w?.accuracy?.toStringAsFixed(1), w?.fixes, _iso(w?.time),
       _iso(s.timeOf(VisitKind.setup)), _iso(s.timeOf(VisitKind.pickup)),
@@ -109,7 +112,10 @@ Future<File> exportSites(SiteStore store, List<Site> sites, {void Function(Strin
     if (w != null) {
       final description = [
         'Serial number: ${s.serialNumber}',
-        'SEED: ${s.network}.${s.station}.${s.location} ${channels.where((c) => c.isNotEmpty).join(' ')}',
+        'SEED: ${s.network}.${s.station}.${s.location} ${[
+          for (var i = 0; i < 4; i++)
+            if (channels[i].isNotEmpty) s.locationOf(i).isEmpty || s.locationOf(i) == s.location ? channels[i] : '${s.locationOf(i)}.${channels[i]}'
+        ].join(' ')}',
         for (final v in visits) '${_iso(v.time)} ${v.kind.label}: ${v.notes}',
       ].join('\n');
       kml.write('<Placemark><name>${_xml(s.title)}</name><description>${_xml(description)}</description>'

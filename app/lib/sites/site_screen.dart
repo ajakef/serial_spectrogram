@@ -70,6 +70,9 @@ class _SiteScreenState extends State<SiteScreen> {
       if (site.station != s.station) 'station: here "${site.station}", logger "${s.station}"',
       if (site.location != s.location) 'location: here "${site.location}", logger "${s.location}"',
       for (var i = 0; i < 4; i++)
+        if (s.gains[i] > 0 && site.locationOf(i) != s.locationOf(i))
+          'channel ${i + 1} location: here "${site.locationOf(i)}", logger "${s.locationOf(i)}"',
+      for (var i = 0; i < 4; i++)
         if (s.gains[i] > 0 && site.channels[i].isNotEmpty && site.channels[i] != s.channels[i])
           'channel ${i + 1}: here ${site.channels[i]}, logger ${s.channels[i]}',
     ];
@@ -251,6 +254,14 @@ class _SiteScreenState extends State<SiteScreen> {
           ],
         ],
       ),
+      if (site.channelLocations.any((l) => l.isNotEmpty))
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+              'Channel locations from the logger: ${[for (var i = 0; i < 4; i++) site.locationOf(i).isEmpty ? 'none' : site.locationOf(i)].join(', ')} '
+              '(it found infrasound sensors on channels 2-4).',
+              style: const TextStyle(color: Colors.black54)),
+        ),
       if (rate == null)
         const Padding(
           padding: EdgeInsets.only(top: 4),
@@ -274,7 +285,8 @@ void fillSiteFromLogger(Site site, int serial, LoggerSettings s) {
     ..station = s.station
     ..location = s.location
     ..sampleRate = s.sampleRate
-    ..channels = [for (var i = 0; i < 4; i++) s.gains[i] > 0 ? s.channels[i] : ''];
+    ..channels = [for (var i = 0; i < 4; i++) s.gains[i] > 0 ? s.channels[i] : '']
+    ..channelLocations = [for (var i = 0; i < 4; i++) s.gains[i] > 0 && s.channelLocations != null ? s.channelLocations![i] : ''];
 }
 
 /// "1.2 km away", for lists.

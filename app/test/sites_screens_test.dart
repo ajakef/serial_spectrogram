@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -79,5 +80,18 @@ void main() {
     expect(site.station, '00002');
     expect(site.sampleRate, 400);
     expect(site.channels, ['CDF', '', '', '']); // channels that are off are left blank
+    expect(site.channelLocations, ['', '', '', '']);
+  });
+
+  test('infrasound sensors found on channels 2-4: the site keeps each channel\'s own location', () {
+    final s = LoggerSettings.parse('Config: gains 128,32,32,0; 200 sps; gps_mode 1, cycle 30 min, quota 20; '
+        'SEED codes .00002..HDF.HDF.HDF.HDF; channel locations -,01,02,03')!;
+    final site = Site();
+    fillSiteFromLogger(site, 2, s);
+    expect(site.channels, ['HDF', 'HDF', 'HDF', '']);
+    expect(site.channelLocations, ['', '01', '02', '']);
+    expect([for (var i = 0; i < 4; i++) site.locationOf(i)], ['', '01', '02', '']);
+    final back = Site.fromJson(jsonDecode(jsonEncode(site.toJson())) as Map);
+    expect(back.channelLocations, ['', '01', '02', '']);
   });
 }
