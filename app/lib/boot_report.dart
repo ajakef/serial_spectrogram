@@ -175,7 +175,7 @@ class ReportLine {
 const errorCodeMeanings = {
   1: 'SD card can\'t be started (missing, unreadable, or not formatted): not recording',
   2: 'SD card works, but a data file can\'t be created or written (full or damaged?): not recording',
-  3: 'SD card couldn\'t keep up and some data were lost; still recording',
+  3: 'SD card couldn\'t keep up or refused a write, and some data were lost; still recording',
   4: 'An enabled channel\'s ADC didn\'t respond: that channel\'s data are bad',
   5: 'GPS didn\'t respond, or its PPS line is noisy: no GPS timing',
   6: 'CONFIG.TXT has an invalid value; the default was used instead',
